@@ -1,4 +1,19 @@
 import 'dotenv/config'
+
+// Suppress libsignal decryption noise — these happen when WhatsApp encrypts
+// messages for your phone and the companion device can't decrypt them (expected).
+const _origConsoleError = console.error
+console.error = (...args) => {
+  const msg = String(args[0] ?? '')
+  if (
+    msg.includes('Bad MAC') ||
+    msg.includes('Session error') ||
+    msg.includes('failed to decrypt') ||
+    msg.includes('skipping message')
+  ) return
+  _origConsoleError(...args)
+}
+
 import { createStore } from './state/store.js'
 import { createLLMProvider } from './llm/index.js'
 import { createWhatsAppClient } from './whatsapp/client.js'
