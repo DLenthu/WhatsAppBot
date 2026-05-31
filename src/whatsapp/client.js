@@ -22,6 +22,7 @@ export async function createWhatsAppClient(onMessage) {
   let sock = null
   const historyStore = new Map()  // jid → WAMessage[]
   const contactsStore = new Map() // jid → { id, name, notify }
+  const chatsStore = new Map()    // jid → { id, name, ... }
 
   async function connect() {
     const { state, saveCreds } = await useMultiFileAuthState('./data/session')
@@ -48,6 +49,28 @@ export async function createWhatsAppClient(onMessage) {
         if (!u.id) continue
         const existing = contactsStore.get(u.id) ?? {}
         contactsStore.set(u.id, { ...existing, ...u })
+      }
+    })
+
+    // chats.set fires on connect with ALL known chats (including name/metadata)
+    sock.ev.on('chats.set', ({ chats }) => {
+      for (const chat of chats) {
+        if (chat.id) chatsStore.set(chat.id, chat)
+      }
+      console.log(`[client] Loaded ${chatsStore.size} chats`)
+    })
+
+    sock.ev.on('chats.upsert', (chats) => {
+      for (const chat of chats) {
+        if (chat.id) chatsStore.set(chat.id, chat)
+      }
+    })
+
+    sock.ev.on('chats.update', (updates) => {
+      for (const u of updates) {
+        if (!u.id) continue
+        const existing = chatsStore.get(u.id) ?? {}
+        chatsStore.set(u.id, { ...existing, ...u })
       }
     })
 
@@ -164,21 +187,27 @@ export async function createWhatsAppClient(onMessage) {
       const results = []
 
       const add = (jid, name) => {
-        if (!jid || seen.has(jid)) return
+        if (!jid || !name || seen.has(jid)) return
+        if (jid === 'status@broadcast') return
         if (q && !name.toLowerCase().includes(q)) return
         seen.add(jid)
         results.push({ jid, name })
       }
 
-      // Contacts store (from contacts.upsert sync — has phone-saved names when available)
-      for (const [jid, c] of contactsStore) {
-        if (jid.endsWith('@g.us') || jid === 'status@broadcast') continue
-        add(jid, c.name || c.notify || jid)
+      // 1. chats.set — all chats with their display name (most complete source)
+      for (const [jid, chat] of chatsStore) {
+        const name = chat.name || contactsStore.get(jid)?.name || contactsStore.get(jid)?.notify
+        if (name) add(jid, name)
       }
 
-      // History pushNames as fallback
+      // 2. contacts.upsert — phone-saved names
+      for (const [jid, c] of contactsStore) {
+        add(jid, c.name || c.notify)
+      }
+
+      // 3. messaging-history pushNames as last resort
       for (const [jid, messages] of historyStore) {
-        if (jid.endsWith('@g.us') || jid === 'status@broadcast') continue
+        if (jid.endsWith('@g.us')) continue
         for (const msg of messages) {
           if (msg.pushName) { add(jid, msg.pushName); break }
         }
