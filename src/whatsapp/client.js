@@ -143,6 +143,24 @@ export async function createWhatsAppClient(onMessage) {
       return contact?.name ?? contact?.notify ?? null
     },
 
+    findContactByName(nameQuery) {
+      const q = nameQuery.toLowerCase()
+      let best = null
+      for (const [jid, messages] of historyStore) {
+        if (jid.endsWith('@g.us') || jid === 'status@broadcast') continue
+        for (const msg of messages) {
+          const name = msg.pushName
+          if (!name) continue
+          if (name.toLowerCase().includes(q)) {
+            best = { jid, name }
+            break
+          }
+        }
+        if (best) break
+      }
+      return best
+    },
+
     getHistoryMessages(jid, limit = 200) {
       const msgs = historyStore.get(jid) ?? []
       return msgs

@@ -57,11 +57,11 @@ export function createCommandHandler({ store, client }) {
       return true // Command was recognized, but no argument provided
     }
 
-    // Try to resolve the contact name
-    const contact = store.resolveContact(nameQuery)
+    // Try to resolve the contact name — store hints first, then history fallback
+    const contact = store.resolveContact(nameQuery) ?? client.findContactByName(nameQuery)
 
     if (!contact) {
-      const msg = `❌ No contact found for '${nameQuery}'. Wait for a message from them first, then try again.`
+      const msg = `❌ No contact found for '${nameQuery}'. Make sure they've messaged you before, then try again.`
       await client.sendMessage(client.getSelfJid(), msg)
       return true
     }
