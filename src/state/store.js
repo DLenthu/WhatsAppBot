@@ -204,11 +204,12 @@ function createSQLiteStore(dbPath) {
     resolveContact(nameQuery) {
       if (!nameQuery) return null
 
+      const q = nameQuery.toLowerCase()
       const row = db
-        .prepare('SELECT jid FROM contact_hints WHERE name = ? LIMIT 1')
-        .get(nameQuery)
+        .prepare("SELECT jid, name FROM contact_hints WHERE lower(name) LIKE '%' || ? || '%' LIMIT 1")
+        .get(q)
 
-      return row ? row.jid : null
+      return row ? { jid: row.jid, name: row.name } : null
     },
   }
 }
@@ -329,10 +330,11 @@ function createJSONStore(dbPath) {
     resolveContact(nameQuery) {
       if (!nameQuery) return null
 
+      const q = nameQuery.toLowerCase()
       const data = loadData()
       for (const [jid, name] of Object.entries(data.contact_hints)) {
-        if (name === nameQuery) {
-          return jid
+        if (name.toLowerCase().includes(q)) {
+          return { jid, name }
         }
       }
       return null

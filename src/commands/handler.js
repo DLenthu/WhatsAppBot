@@ -55,34 +55,24 @@ export function createCommandHandler({ store, client }) {
     }
 
     // Try to resolve the contact name
-    const contactJid = store.resolveContact(nameQuery)
+    const contact = store.resolveContact(nameQuery)
 
-    if (!contactJid) {
-      // Contact not found
+    if (!contact) {
       const msg = `❌ No contact found for '${nameQuery}'. Wait for a message from them first, then try again.`
       await client.sendMessage(client.getSelfJid(), msg)
       return true
     }
 
-    // Check if already active for a different contact
     const activeChat = store.getActiveChat()
-    if (activeChat && activeChat.jid === contactJid) {
-      // Already active for this contact
-      const msg = `ℹ️ Already active for ${activeChat.name}. Use !deactivate first.`
-      await client.sendMessage(client.getSelfJid(), msg)
-      return true
-    }
-
-    if (activeChat && activeChat.jid !== contactJid) {
-      // Already active for a different contact
+    if (activeChat) {
       const msg = `ℹ️ Already active for ${activeChat.name}. Use !deactivate first.`
       await client.sendMessage(client.getSelfJid(), msg)
       return true
     }
 
     // Activate bot for this contact
-    store.setActiveChat({ jid: contactJid, name: nameQuery })
-    const msg = `✅ Bot active for ${nameQuery}`
+    store.setActiveChat({ jid: contact.jid, name: contact.name })
+    const msg = `✅ Bot active for ${contact.name}`
     await client.sendMessage(client.getSelfJid(), msg)
     return true
   }

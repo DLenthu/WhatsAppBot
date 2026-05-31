@@ -7,27 +7,27 @@
 
 ## Phase 1 — Project Foundation
 
-- [ ] **TASK-01** — Project scaffold (package.json, folder structure, .env) → `tasks/task-01-project-scaffold.md` *(Haiku)*
-- [ ] **TASK-02** — WhatsApp client via Baileys (QR auth, session, send/receive) → `tasks/task-02-whatsapp-client.md` *(Sonnet)*
-- [ ] **TASK-03** — SQLite state store (active chat, message history, profiles) → `tasks/task-03-state-store.md` *(Haiku)*
-- [ ] **TASK-04** — LLM provider interface + Groq implementation → `tasks/task-04-groq-provider.md` *(Haiku)*
+- [x] **TASK-01** — Project scaffold (package.json, folder structure, .env) → `tasks/task-01-project-scaffold.md` *(Haiku)*
+- [x] **TASK-02** — WhatsApp client via Baileys (QR auth, session, send/receive) → `tasks/task-02-whatsapp-client.md` *(Sonnet)*
+- [x] **TASK-03** — SQLite state store (active chat, message history, profiles) → `tasks/task-03-state-store.md` *(Haiku)*
+- [x] **TASK-04** — LLM provider interface + Groq implementation → `tasks/task-04-groq-provider.md` *(Haiku)*
 
 ## Phase 2 — Core Bot Logic
 
-- [ ] **TASK-05** — Command handler (self-chat: !activate, !deactivate, !status) → `tasks/task-05-command-handler.md` *(Haiku)*
-- [ ] **TASK-06** — Message router (route incoming messages to response generator) → `tasks/task-06-message-router.md` *(Haiku)*
-- [ ] **TASK-07** — Response generator (prompt assembly + LLM call + send reply) → `tasks/task-07-response-generator.md` *(Sonnet)*
+- [x] **TASK-05** — Command handler (self-chat: !activate, !deactivate, !status) → `tasks/task-05-command-handler.md` *(Haiku)*
+- [x] **TASK-06** — Message router (route incoming messages to response generator) → `tasks/task-06-message-router.md` *(Haiku)*
+- [x] **TASK-07** — Response generator (prompt assembly + LLM call + send reply) → `tasks/task-07-response-generator.md` *(Sonnet)*
 
 ## Phase 3 — Style Learning
 
-- [ ] **TASK-08** — WhatsApp chat export parser (.txt → structured messages) → `tasks/task-08-chat-export-parser.md` *(Sonnet)*
-- [ ] **TASK-09** — Style analyzer (extract tone, vocabulary, language patterns) → `tasks/task-09-style-analyzer.md` *(Sonnet)*
-- [ ] **TASK-10** — Import CLI script (node scripts/import-chat.js [file] [contact]) → `tasks/task-10-import-script.md` *(Haiku)*
+- [x] **TASK-08** — WhatsApp chat export parser (.txt → structured messages) → `tasks/task-08-chat-export-parser.md` *(Sonnet)*
+- [x] **TASK-09** — Style analyzer (extract tone, vocabulary, language patterns) → `tasks/task-09-style-analyzer.md` *(Sonnet)*
+- [x] **TASK-10** — Import CLI script (node scripts/import-chat.js [file] [contact]) → `tasks/task-10-import-script.md` *(Haiku)*
 
 ## Phase 4 — Dashboard & Wiring
 
-- [ ] **TASK-11** — Web dashboard (Express + HTML, status page, active chat) → `tasks/task-11-web-dashboard.md` *(Haiku)*
-- [ ] **TASK-12** — Main entry point (wire all components in src/index.js) → `tasks/task-12-main-entry.md` *(Sonnet)*
+- [x] **TASK-11** — Web dashboard (Express + HTML, status page, active chat) → `tasks/task-11-web-dashboard.md` *(Haiku)*
+- [x] **TASK-12** — Main entry point (wire all components in src/index.js) → `tasks/task-12-main-entry.md` *(Sonnet)*
 
 ## Phase 5 — Local LLM (later)
 
