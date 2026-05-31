@@ -82,8 +82,9 @@ export function createResponseGenerator({ store, llmProvider, client }) {
     const userName = selfJid ? selfJid.split('@')[0].split(':')[0] : 'User'
 
     try {
-      // 1. Fetch style profile (null if not yet built)
-      const profile = store.getProfile(jid)
+      // 1. Fetch style profile — try JID first, fall back to contact name
+      // (import-chat.js saves by name when no JID is provided; JID gets linked on first message)
+      const profile = store.getProfile(jid) ?? store.getProfile(senderName)
 
       // 2. Fetch last 10 messages from history
       //    NOTE: the router already appended the incoming message before calling us,
