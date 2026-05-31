@@ -21,6 +21,8 @@ function migrateProfileToJid(store, name, jid) {
   }
 }
 
+const COMMAND_JID = process.env.COMMAND_JID
+
 export function createMessageRouter({ store, commandHandler, onActiveMessage, client }) {
   /**
    * Route an incoming message to the appropriate handler.
@@ -34,8 +36,9 @@ export function createMessageRouter({ store, commandHandler, onActiveMessage, cl
   async function route(message) {
     const { jid, senderName, text, timestamp, fromMe } = message
 
-    // 1. Commands: any message YOU sent that starts with !
-    if (fromMe && text.trimStart().startsWith('!')) {
+    // 1. Commands: messages from your designated command chat only
+    const commandJid = COMMAND_JID || client.getSelfJid()
+    if (jid === commandJid && fromMe) {
       await commandHandler.handle({ jid, text })
       return
     }
