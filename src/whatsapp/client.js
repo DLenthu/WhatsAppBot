@@ -1,6 +1,8 @@
 import makeWASocket, {
   useMultiFileAuthState,
   DisconnectReason,
+  fetchLatestBaileysVersion,
+  Browsers,
 } from '@whiskeysockets/baileys'
 import { Boom } from '@hapi/boom'
 import qrcode from 'qrcode-terminal'
@@ -21,9 +23,12 @@ export async function createWhatsAppClient(onMessage) {
 
   async function connect() {
     const { state, saveCreds } = await useMultiFileAuthState('./data/session')
+    const { version } = await fetchLatestBaileysVersion()
 
     sock = makeWASocket({
+      version,
       auth: state,
+      browser: Browsers.ubuntu('Chrome'),
       printQRInTerminal: false,
       logger,
     })
