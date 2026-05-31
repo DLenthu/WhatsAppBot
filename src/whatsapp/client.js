@@ -76,12 +76,20 @@ export async function createWhatsAppClient(onMessage) {
     })
 
     sock.ev.on('messages.upsert', ({ messages, type }) => {
-      if (type !== 'notify') return
+      // 'notify' = incoming messages from others
+      // 'append' = messages you sent (including self-chat commands)
+      // We need both: notify for incoming, append only for self-chat commands
+      if (type !== 'notify' && type !== 'append') return
 
       for (const msg of messages) {
         const { key, message, pushName, messageTimestamp } = msg
 
         if (!message) continue
+
+        const remoteJid = key.remoteJid
+
+        // For 'append' type, only process self-chat messages (commands)
+        if (type === 'append' && remoteJid !== selfJid) continue
 
         // Extract text from supported message types
         const text =
@@ -91,9 +99,7 @@ export async function createWhatsAppClient(onMessage) {
 
         if (!text) continue
 
-        const remoteJid = key.remoteJid
-
-        // Skip fromMe messages EXCEPT when it's the self-chat (own JID)
+        // Skip outgoing messages to others (not self-chat)
         if (key.fromMe && remoteJid !== selfJid) continue
 
         const senderName = pushName || remoteJid
