@@ -4,31 +4,24 @@ import makeWASocket, {
   fetchLatestBaileysVersion,
   Browsers,
   jidNormalizedUser,
-  makeInMemoryStore,
 } from '@whiskeysockets/baileys'
 import { Boom } from '@hapi/boom'
 import qrcode from 'qrcode-terminal'
 import pino from 'pino'
-import { writeFileSync, readFileSync, existsSync } from 'fs'
 
 const logger = pino({ level: 'silent' }).child({ module: 'whatsapp-client' })
-
-const STORE_PATH = './data/wa-store.json'
 
 export async function createWhatsAppClient(onMessage) {
   let selfJid = null
   let sock = null
   const historyStore = new Map()  // jid → WAMessage[]
+  const contactsMap = new Map()   // jid → { name, notify }
 
-  // makeInMemoryStore tracks contacts, chats, messages automatically
-  const waStore = makeInMemoryStore({ logger })
-  if (existsSync(STORE_PATH)) {
-    try { waStore.readFromFile(STORE_PATH) } catch {}
+  function upsertContact(c) {
+    if (!c.id) return
+    const existing = contactsMap.get(c.id) ?? {}
+    contactsMap.set(c.id, { ...existing, ...c })
   }
-  // Persist store every 30s so contacts survive restarts
-  setInterval(() => {
-    try { waStore.writeToFile(STORE_PATH) } catch {}
-  }, 30_000)
 
   async function connect() {
     const { state, saveCreds } = await useMultiFileAuthState('./data/session')
@@ -42,10 +35,29 @@ export async function createWhatsAppClient(onMessage) {
       logger,
     })
 
-    // Bind the in-memory store to the socket — it subscribes to all sync events
-    waStore.bind(sock.ev)
-
     sock.ev.on('creds.update', saveCreds)
+
+    // Full contacts sync fired on connect — captures ALL contacts in batches
+    sock.ev.on('contacts.upsert', (contacts) => {
+      for (const c of contacts) upsertContact(c)
+      console.log(`[client] Contacts synced: ${contactsMap.size} total`)
+    })
+
+    sock.ev.on('contacts.update', (updates) => {
+      for (const u of updates) upsertContact(u)
+    })
+
+    // chats.set fires on connect with metadata for ALL known chats
+    sock.ev.on('chats.set', ({ chats }) => {
+      for (const chat of chats) {
+        if (!chat.id || chat.id === 'status@broadcast') continue
+        // chats carry a name for groups; for DMs merge into contactsMap
+        if (chat.name && !chat.id.endsWith('@g.us')) {
+          upsertContact({ id: chat.id, notify: chat.name })
+        }
+      }
+      console.log(`[client] Chats loaded: ${chats.length}`)
+    })
 
     sock.ev.on('connection.update', async (update) => {
       const { connection, lastDisconnect, qr } = update
@@ -80,10 +92,14 @@ export async function createWhatsAppClient(onMessage) {
       for (const msg of messages) {
         const jid = msg.key?.remoteJid
         if (!jid || jid === 'status@broadcast') continue
+        // Extract pushName into contactsMap for any unknown contact
+        if (msg.pushName && !msg.key.fromMe) {
+          upsertContact({ id: jid, notify: msg.pushName })
+        }
         if (!historyStore.has(jid)) historyStore.set(jid, [])
         historyStore.get(jid).push(msg)
       }
-      console.log(`[client] History loaded for ${historyStore.size} chats`)
+      console.log(`[client] History loaded: ${historyStore.size} chats, ${contactsMap.size} contacts known`)
     })
 
     sock.ev.on('messages.upsert', ({ messages, type }) => {
@@ -96,6 +112,9 @@ export async function createWhatsAppClient(onMessage) {
 
         const remoteJid = key.remoteJid
         const fromMe = key.fromMe === true
+
+        // Learn contact name from incoming messages
+        if (pushName && !fromMe) upsertContact({ id: remoteJid, notify: pushName })
 
         const text =
           message.conversation ||
@@ -131,53 +150,26 @@ export async function createWhatsAppClient(onMessage) {
     },
 
     /**
-     * Search all known contacts and chats by name (partial, case-insensitive).
-     * Sources in priority order:
-     *   1. waStore.contacts — phone-saved names + WhatsApp notify names (full sync)
-     *   2. waStore.chats — group/chat display names
-     *   3. historyStore pushNames — fallback from message history
+     * Search all known contacts by name (partial, case-insensitive).
+     * Uses: contacts.upsert name/notify, chats.set names, history pushNames.
      */
     searchContacts(nameQuery) {
       const q = (nameQuery ?? '').toLowerCase()
-      const seen = new Set()
       const results = []
 
-      const add = (jid, name) => {
-        if (!jid || !name || seen.has(jid)) return
-        if (jid === 'status@broadcast') return
-        if (jid.endsWith('@lid')) return  // skip LID shadow entries
-        if (q && !name.toLowerCase().includes(q)) return
-        seen.add(jid)
+      for (const [jid, c] of contactsMap) {
+        if (jid === 'status@broadcast' || jid.endsWith('@lid')) continue
+        const name = c.name || c.notify
+        if (!name) continue
+        if (q && !name.toLowerCase().includes(q)) continue
         results.push({ jid, name })
-      }
-
-      // 1. waStore.contacts — keyed by JID, has .name (phone-saved) and .notify (WA name)
-      const contacts = waStore.contacts ?? {}
-      for (const [jid, c] of Object.entries(contacts)) {
-        add(jid, c.name || c.notify)
-      }
-
-      // 2. waStore.chats — covers any chat not in contacts (groups, businesses, etc.)
-      const chats = waStore.chats?.all?.() ?? []
-      for (const chat of chats) {
-        const name = chat.name || contacts[chat.id]?.name || contacts[chat.id]?.notify
-        if (name) add(chat.id, name)
-      }
-
-      // 3. historyStore pushNames — last resort
-      for (const [jid, messages] of historyStore) {
-        if (jid.endsWith('@g.us')) continue
-        for (const msg of messages) {
-          if (msg.pushName) { add(jid, msg.pushName); break }
-        }
       }
 
       return results
     },
 
     findContactByName(nameQuery) {
-      const results = this.searchContacts(nameQuery)
-      return results[0] ?? null
+      return this.searchContacts(nameQuery)[0] ?? null
     },
 
     getHistoryMessages(jid, limit = 200) {
