@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WhatsAppBot Dashboard</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background-color: #1a1a1a;
+      color: #e0e0e0;
+      padding: 16px;
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 32px;
+      padding-top: 16px;
+    }
+
+    header h1 {
+      font-size: 28px;
+      font-weight: 600;
+      color: #ffffff;
+    }
+
+    .card {
+      background-color: #2d2d2d;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 16px;
+      border: 1px solid #3d3d3d;
+    }
+
+    .status-card {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+
+    .status-dot {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      transition: background-color 0.3s ease;
+    }
+
+    .status-dot.active {
+      background-color: #4ade80;
+      box-shadow: 0 0 10px rgba(74, 222, 128, 0.5);
+    }
+
+    .status-dot.inactive {
+      background-color: #888888;
+    }
+
+    .status-info h2 {
+      font-size: 16px;
+      font-weight: 500;
+      color: #ffffff;
+      margin-bottom: 4px;
+    }
+
+    .status-info p {
+      font-size: 14px;
+      color: #b0b0b0;
+    }
+
+    .section-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: #a0a0a0;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 12px;
+      margin-top: 8px;
+    }
+
+    .profile-item,
+    .reply-item {
+      display: flex;
+      align-items: flex-start;
+      padding: 12px 0;
+      border-bottom: 1px solid #3d3d3d;
+      font-size: 14px;
+    }
+
+    .profile-item:last-child,
+    .reply-item:last-child {
+      border-bottom: none;
+    }
+
+    .profile-item {
+      align-items: center;
+      gap: 12px;
+    }
+
+    .profile-icon {
+      font-size: 16px;
+    }
+
+    .profile-name {
+      color: #e0e0e0;
+    }
+
+    .reply-item {
+      gap: 12px;
+    }
+
+    .reply-contact {
+      font-weight: 500;
+      color: #4ade80;
+      min-width: 80px;
+      flex-shrink: 0;
+    }
+
+    .reply-content {
+      flex: 1;
+    }
+
+    .reply-text {
+      color: #e0e0e0;
+      margin-bottom: 4px;
+      word-break: break-word;
+    }
+
+    .reply-time {
+      font-size: 12px;
+      color: #888888;
+    }
+
+    .empty-message {
+      color: #888888;
+      font-size: 14px;
+      padding: 12px 0;
+      font-style: italic;
+    }
+
+    .refresh-indicator {
+      text-align: center;
+      color: #888888;
+      font-size: 12px;
+      margin-top: 24px;
+      opacity: 0.6;
+    }
+
+    @media (max-width: 600px) {
+      body {
+        padding: 12px;
+      }
+
+      header h1 {
+        font-size: 24px;
+      }
+
+      .card {
+        padding: 16px;
+      }
+
+      .status-dot {
+        width: 40px;
+        height: 40px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>WhatsAppBot 🤖</h1>
+    </header>
+
+    <div class="card status-card">
+      <div class="status-dot inactive" id="statusDot"></div>
+      <div class="status-info">
+        <h2>Status</h2>
+        <p id="statusText">Loading...</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="section-title">Loaded Profiles</div>
+      <div id="profilesList">
+        <div class="empty-message">Loading profiles...</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="section-title">Recent Replies</div>
+      <div id="repliesList">
+        <div class="empty-message">Loading replies...</div>
+      </div>
+    </div>
+
+    <div class="refresh-indicator">
+      Auto-refreshing every 10 seconds
+    </div>
+  </div>
+
+  <script>
+    /**
+     * Format timestamp to relative time (e.g., "2 min ago")
+     */
+    function formatTime(timestamp) {
+      const now = Date.now()
+      const diff = now - timestamp
+      const seconds = Math.floor(diff / 1000)
+      const minutes = Math.floor(seconds / 60)
+      const hours = Math.floor(minutes / 60)
+      const days = Math.floor(hours / 24)
+
+      if (seconds < 60) return 'just now'
+      if (minutes < 60) return `${minutes} min ago`
+      if (hours < 24) return `${hours} hr ago`
+      if (days < 7) return `${days} day ago`
+
+      const date = new Date(timestamp)
+      return date.toLocaleDateString()
+    }
+
+    /**
+     * Fetch and update dashboard status
+     */
+    async function updateStatus() {
+      try {
+        const response = await fetch('/api/status')
+        const data = await response.json()
+
+        // Update status dot and text
+        const statusDot = document.getElementById('statusDot')
+        const statusText = document.getElementById('statusText')
+
+        if (data.active && data.activeContact) {
+          statusDot.className = 'status-dot active'
+          statusText.textContent = `Active for: ${data.activeContact.name || data.activeContact.jid}`
+        } else {
+          statusDot.className = 'status-dot inactive'
+          statusText.textContent = 'Inactive'
+        }
+
+        // Update profiles list
+        const profilesList = document.getElementById('profilesList')
+        if (data.profiles && data.profiles.length > 0) {
+          profilesList.innerHTML = data.profiles
+            .map(profile => `
+              <div class="profile-item">
+                <span class="profile-icon">✅</span>
+                <span class="profile-name">${profile.name || profile.jid}</span>
+              </div>
+            `)
+            .join('')
+        } else {
+          profilesList.innerHTML = '<div class="empty-message">No profiles loaded</div>'
+        }
+
+        // Update recent replies
+        const repliesList = document.getElementById('repliesList')
+        if (data.recentReplies && data.recentReplies.length > 0) {
+          repliesList.innerHTML = data.recentReplies
+            .map(reply => `
+              <div class="reply-item">
+                <span class="reply-contact">${reply.contact}</span>
+                <div class="reply-content">
+                  <div class="reply-text">${escapeHtml(reply.text)}</div>
+                  <div class="reply-time">${formatTime(reply.timestamp)}</div>
+                </div>
+              </div>
+            `)
+            .join('')
+        } else {
+          repliesList.innerHTML = '<div class="empty-message">No recent replies</div>'
+        }
+      } catch (error) {
+        console.error('Error updating status:', error)
+        document.getElementById('profilesList').innerHTML = '<div class="empty-message">Error loading data</div>'
+      }
+    }
+
+    /**
+     * Escape HTML to prevent XSS
+     */
+    function escapeHtml(text) {
+      const div = document.createElement('div')
+      div.textContent = text
+      return div.innerHTML
+    }
+
+    // Initial update
+    updateStatus()
+
+    // Auto-refresh every 10 seconds
+    setInterval(updateStatus, 10000)
+  </script>
+</body>
+</html>
