@@ -11,9 +11,28 @@ console.error = (...args) => {
     msg.includes('failed to decrypt') ||
     msg.includes('skipping message') ||
     msg.includes('no session record') ||
-    msg.includes('decrypt')
+    msg.includes('decrypt') ||
+    msg.includes('closing open session') ||
+    msg.includes('closing session') ||
+    msg.includes('sessionentry') ||
+    msg.includes('prekey bundle') ||
+    msg.includes('_chains') ||
+    msg.includes('registrationid')
   ) return
   _origConsoleError(...args)
+}
+
+// Also suppress these from console.log (Baileys logs session events to stdout too)
+const _origConsoleLog = console.log
+console.log = (...args) => {
+  const msg = String(args[0] ?? '').toLowerCase()
+  if (
+    msg.includes('closing open session') ||
+    msg.includes('closing session') ||
+    msg.includes('sessionentry') ||
+    msg.includes('_chains')
+  ) return
+  _origConsoleLog(...args)
 }
 
 import { createStore } from './state/store.js'

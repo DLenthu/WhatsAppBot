@@ -141,13 +141,22 @@ export function createCommandHandler({ store, client }) {
 
   async function handleContacts(query) {
     const selfJid = client.getSelfJid()
-    const results = client.searchContacts(query)
-    if (results.length === 0) {
-      await client.sendMessage(selfJid, `No contacts found${query ? ` for '${query}'` : ''}.`)
+    const all = client.searchContacts('')
+    const results = query ? all.filter(c => c.name.toLowerCase().includes(query.toLowerCase())) : all
+
+    if (all.length === 0) {
+      await client.sendMessage(selfJid, `⚠️ No contacts synced yet. Wait a few seconds after connecting and try again.`)
       return true
     }
-    const lines = results.slice(0, 20).map(c => `• ${c.name} — ${c.jid}`)
-    await client.sendMessage(selfJid, `Contacts (${results.length} found):\n${lines.join('\n')}`)
+
+    if (results.length === 0) {
+      await client.sendMessage(selfJid, `No contacts matching '${query}'. Total known: ${all.length}. Try: !contacts (no query) to see all.`)
+      return true
+    }
+
+    const lines = results.slice(0, 25).map(c => `• ${c.name}`)
+    const header = query ? `${results.length} match(es) for '${query}':` : `All contacts (${results.length}):`
+    await client.sendMessage(selfJid, `${header}\n${lines.join('\n')}`)
     return true
   }
 

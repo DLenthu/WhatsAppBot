@@ -37,6 +37,13 @@ export async function createWhatsAppClient(onMessage) {
 
     sock.ev.on('creds.update', saveCreds)
 
+    // Temporary: log every event name so we can see what Baileys fires on connect
+    sock.ev.process((events) => {
+      for (const [event] of Object.entries(events)) {
+        console.log(`[baileys-event] ${event}`)
+      }
+    })
+
     // Full contacts sync fired on connect — captures ALL contacts in batches
     sock.ev.on('contacts.upsert', (contacts) => {
       for (const c of contacts) upsertContact(c)
