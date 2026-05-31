@@ -76,15 +76,6 @@ export async function createWhatsAppClient(onMessage) {
     })
 
     sock.ev.on('messages.upsert', ({ messages, type }) => {
-      console.log(`[DEBUG] messages.upsert type=${type} count=${messages.length} selfJid=${selfJid}`)
-      for (const m of messages) {
-        const t = m.message?.conversation || m.message?.extendedTextMessage?.text || '(no text)'
-        console.log(`[DEBUG]  jid=${m.key.remoteJid} fromMe=${m.key.fromMe} text="${t.slice(0,40)}"`)
-      }
-
-      // 'notify' = incoming messages from others
-      // 'append' = messages you sent (including self-chat commands)
-      // We need both: notify for incoming, append only for self-chat commands
       if (type !== 'notify' && type !== 'append') return
 
       for (const msg of messages) {
@@ -93,9 +84,7 @@ export async function createWhatsAppClient(onMessage) {
         if (!message) continue
 
         const remoteJid = key.remoteJid
-
-        // For 'append' type, only process self-chat messages (commands)
-        if (type === 'append' && remoteJid !== selfJid) continue
+        const fromMe = key.fromMe === true
 
         // Extract text from supported message types
         const text =
@@ -105,8 +94,11 @@ export async function createWhatsAppClient(onMessage) {
 
         if (!text) continue
 
-        // Skip outgoing messages to others (not self-chat)
-        if (key.fromMe && remoteJid !== selfJid) continue
+        // Drop append-type messages that aren't commands (reduces noise)
+        if (type === 'append' && !text.trimStart().startsWith('!')) continue
+
+        // Drop outgoing messages unless they're a command (start with !)
+        if (fromMe && !text.trimStart().startsWith('!')) continue
 
         const senderName = pushName || remoteJid
 
@@ -115,7 +107,8 @@ export async function createWhatsAppClient(onMessage) {
             ? messageTimestamp
             : messageTimestamp?.toNumber?.() ?? Date.now()
 
-        onMessage({ jid: remoteJid, senderName, text, timestamp })
+        // Commands can come from any chat — pass selfJid so router can identify them
+        onMessage({ jid: remoteJid, senderName, text, timestamp, fromMe })
       }
     })
   }

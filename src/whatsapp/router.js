@@ -32,11 +32,10 @@ export function createMessageRouter({ store, commandHandler, onActiveMessage, cl
    * @returns {Promise<void>}
    */
   async function route(message) {
-    const { jid, senderName, text, timestamp } = message
+    const { jid, senderName, text, timestamp, fromMe } = message
 
-    // 1. Check if this is a self-chat message (command)
-    // getSelfJid() is called here (not at construction) because selfJid is null until WhatsApp connects
-    if (jid === client.getSelfJid()) {
+    // 1. Commands: any message YOU sent that starts with !
+    if (fromMe && text.trimStart().startsWith('!')) {
       await commandHandler.handle({ jid, text })
       return
     }
