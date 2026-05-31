@@ -3,12 +3,13 @@ import makeWASocket, {
   DisconnectReason,
   fetchLatestBaileysVersion,
   Browsers,
+  jidNormalizedUser,
 } from '@whiskeysockets/baileys'
 import { Boom } from '@hapi/boom'
 import qrcode from 'qrcode-terminal'
 import pino from 'pino'
 
-const logger = pino({ level: 'warn' }).child({ module: 'whatsapp-client' })
+const logger = pino({ level: 'silent' }).child({ module: 'whatsapp-client' })
 
 /**
  * Create and return a connected WhatsApp client.
@@ -44,7 +45,8 @@ export async function createWhatsAppClient(onMessage) {
       }
 
       if (connection === 'open') {
-        selfJid = sock.user.id
+        // Normalize strips the :0 device suffix so it matches remoteJid in self-chat
+        selfJid = jidNormalizedUser(sock.user.id)
         console.log(`WhatsApp connected as ${selfJid}`)
       }
 
