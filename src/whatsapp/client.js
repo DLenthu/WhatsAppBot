@@ -17,6 +17,7 @@ const logger = pino({ level: 'warn' }).child({ module: 'whatsapp-client' })
 export async function createWhatsAppClient(onMessage) {
   let selfJid = null
   let sock = null
+  const historyStore = new Map()  // jid → WAMessage[]
 
   async function connect() {
     const { state, saveCreds } = await useMultiFileAuthState('./data/session')
@@ -55,6 +56,15 @@ export async function createWhatsAppClient(onMessage) {
           console.log('WhatsApp disconnected. Reconnecting...')
           await connect()
         }
+      }
+    })
+
+    sock.ev.on('messaging-history.set', ({ messages }) => {
+      for (const msg of messages) {
+        const jid = msg.key?.remoteJid
+        if (!jid || jid === 'status@broadcast') continue
+        if (!historyStore.has(jid)) historyStore.set(jid, [])
+        historyStore.get(jid).push(msg)
       }
     })
 
@@ -119,6 +129,18 @@ export async function createWhatsAppClient(onMessage) {
     getContactName(jid) {
       const contact = sock.store?.contacts?.[jid]
       return contact?.name ?? contact?.notify ?? null
+    },
+
+    getHistoryMessages(jid, limit = 200) {
+      const msgs = historyStore.get(jid) ?? []
+      return msgs
+        .slice()
+        .sort((a, b) => {
+          const ta = typeof a.messageTimestamp === 'number' ? a.messageTimestamp : (a.messageTimestamp?.toNumber?.() ?? 0)
+          const tb = typeof b.messageTimestamp === 'number' ? b.messageTimestamp : (b.messageTimestamp?.toNumber?.() ?? 0)
+          return ta - tb
+        })
+        .slice(-limit)
     },
   }
 }

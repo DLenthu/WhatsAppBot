@@ -10,6 +10,9 @@
  * @param {Object} deps.client - WhatsApp client instance
  * @returns {Object} Handler with handle() method
  */
+import { analyzeStyle } from '../style/analyzer.js'
+import { fromBaileysMessages } from '../style/from-baileys.js'
+
 export function createCommandHandler({ store, client }) {
   /**
    * Handle a message and execute if it's a command.
@@ -70,10 +73,26 @@ export function createCommandHandler({ store, client }) {
       return true
     }
 
+    // Auto-build style profile from history if none exists
+    const selfJid = client.getSelfJid()
+    const hasProfile = store.getProfile(contact.jid) || store.getProfile(contact.name)
+    if (!hasProfile) {
+      const rawMessages = client.getHistoryMessages(contact.jid, 200)
+      if (rawMessages.length > 0) {
+        await client.sendMessage(selfJid, `🔍 Building style profile from last ${rawMessages.length} messages...`)
+        const parsed = fromBaileysMessages(rawMessages, selfJid, contact.name)
+        const profile = analyzeStyle(parsed)
+        store.saveProfile(contact.jid, profile)
+        await client.sendMessage(selfJid, `📊 Style profile built from ${profile.sampleSize} of your messages (${profile.lengthCategory} messages, ${profile.language})`)
+      } else {
+        await client.sendMessage(selfJid, `ℹ️ No message history found for ${contact.name} yet — will use generic style. Import a chat export for better results.`)
+      }
+    }
+
     // Activate bot for this contact
     store.setActiveChat({ jid: contact.jid, name: contact.name })
     const msg = `✅ Bot active for ${contact.name}`
-    await client.sendMessage(client.getSelfJid(), msg)
+    await client.sendMessage(selfJid, msg)
     return true
   }
 
