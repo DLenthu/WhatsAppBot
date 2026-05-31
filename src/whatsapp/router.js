@@ -38,7 +38,9 @@ export function createMessageRouter({ store, commandHandler, onActiveMessage, cl
 
     // 1. Commands: messages from your designated command chat only
     const commandJid = COMMAND_JID || client.getSelfJid()
-    if (jid === commandJid && fromMe) {
+    // Match phone-number JID, LID (@lid), or self JID — WhatsApp uses LIDs on newer clients
+    const isCommand = fromMe && (jid === commandJid || jid === client.getSelfJid() || (!COMMAND_JID && jid.endsWith('@lid')))
+    if (isCommand) {
       await commandHandler.handle({ jid, text })
       return
     }
