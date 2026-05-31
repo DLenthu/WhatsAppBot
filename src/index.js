@@ -56,13 +56,12 @@ async function main() {
   // 6. Response generator (needs store + llmProvider + client)
   const responseGenerator = createResponseGenerator({ store, llmProvider, client })
 
-  // 7. Message router — wire command handler + response generator
-  //    selfJid is read from the client after it has connected
+  // 7. Message router — passes client so getSelfJid() is resolved per-message after connection
   router = createMessageRouter({
     store,
     commandHandler,
     onActiveMessage: (msg) => responseGenerator.handleMessage(msg),
-    selfJid: client.getSelfJid(),
+    client,
   })
 
   // 8. Startup banner

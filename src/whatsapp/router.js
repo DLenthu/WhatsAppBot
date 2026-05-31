@@ -12,7 +12,7 @@
  * @param {string} deps.selfJid - The bot's own WhatsApp JID
  * @returns {Object} Router with route() method
  */
-export function createMessageRouter({ store, commandHandler, onActiveMessage, selfJid }) {
+export function createMessageRouter({ store, commandHandler, onActiveMessage, client }) {
   /**
    * Route an incoming message to the appropriate handler.
    * @param {Object} message - Message object
@@ -26,7 +26,8 @@ export function createMessageRouter({ store, commandHandler, onActiveMessage, se
     const { jid, senderName, text, timestamp } = message
 
     // 1. Check if this is a self-chat message (command)
-    if (jid === selfJid) {
+    // getSelfJid() is called here (not at construction) because selfJid is null until WhatsApp connects
+    if (jid === client.getSelfJid()) {
       await commandHandler.handle({ jid, text })
       return
     }

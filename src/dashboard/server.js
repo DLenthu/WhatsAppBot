@@ -83,6 +83,13 @@ export function createDashboard({ store, port }) {
       server = app.listen(port, () => {
         console.log(`🌐 Dashboard running at http://localhost:${port}`)
       })
+      server.on('error', (err) => {
+        if (err.code === 'EADDRINUSE') {
+          console.warn(`⚠️  Dashboard: port ${port} in use — dashboard unavailable. Bot will still work.`)
+        } else {
+          console.error('Dashboard error:', err.message)
+        }
+      })
     },
 
     stop() {

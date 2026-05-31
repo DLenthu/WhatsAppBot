@@ -46,7 +46,7 @@ function createSQLiteStore(dbPath) {
     db = new Database(dbPath)
     db.pragma('journal_mode = WAL')
   } catch (err) {
-    console.warn('[Store] Failed to initialize SQLite database, falling back to JSON storage:', err.message)
+    console.warn('[Store] SQLite unavailable (missing build tools), using JSON storage instead.')
     return createJSONStore(dbPath)
   }
 
