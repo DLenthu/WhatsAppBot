@@ -62,7 +62,6 @@ export async function createWhatsAppClient(onMessage) {
 
     sock.ev.on('contacts.upsert', (contacts) => {
       for (const c of contacts) upsertContact(c)
-      console.log(`[client] contacts.upsert: ${contacts.length} received, ${contactsMap.size} total`)
     })
 
     sock.ev.on('contacts.update', (updates) => {
@@ -74,7 +73,6 @@ export async function createWhatsAppClient(onMessage) {
         if (!chat.id || chat.id === 'status@broadcast') continue
         if (chat.name) upsertContact({ id: chat.id, notify: chat.name })
       }
-      console.log(`[client] chats.set: ${chats.length} chats`)
     })
 
     sock.ev.on('chats.upsert', (chats) => {
@@ -102,7 +100,6 @@ export async function createWhatsAppClient(onMessage) {
       if (connection === 'open') {
         selfJid = jidNormalizedUser(sock.user.id)
         console.log(`WhatsApp connected as ${selfJid}`)
-        console.log(`[client] ${contactsMap.size} contacts loaded from disk`)
       }
 
       if (connection === 'close') {
@@ -130,7 +127,7 @@ export async function createWhatsAppClient(onMessage) {
         if (!historyStore.has(jid)) historyStore.set(jid, [])
         historyStore.get(jid).push(msg)
       }
-      console.log(`[client] history: ${historyStore.size} chats, ${contactsMap.size} contacts total`)
+      console.log(`[client] History synced: ${historyStore.size} chats`)
     })
 
     sock.ev.on('messages.upsert', ({ messages, type }) => {
