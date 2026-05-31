@@ -44,16 +44,16 @@ export async function createWhatsAppClient(onMessage) {
       }
 
       if (connection === 'close') {
-        const statusCode =
-          lastDisconnect?.error instanceof Boom
-            ? lastDisconnect.error.output?.statusCode
-            : null
+        const err = lastDisconnect?.error
+        const statusCode = err instanceof Boom ? err.output?.statusCode : null
+        console.log(`WhatsApp disconnected. Code: ${statusCode} | Reason: ${err?.message ?? 'unknown'}`)
 
         if (statusCode === DisconnectReason.loggedOut) {
-          console.log('WhatsApp logged out. Deleting session and exiting.')
+          console.log('Logged out — delete data/session and restart.')
           process.exit(1)
         } else {
-          console.log('WhatsApp disconnected. Reconnecting...')
+          console.log('Reconnecting in 3s...')
+          await new Promise(r => setTimeout(r, 3000))
           await connect()
         }
       }
