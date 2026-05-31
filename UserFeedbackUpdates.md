@@ -62,10 +62,23 @@ These don't match, so commands were silently dropped.
 
 ---
 
+### Issue: !contacts only showing actively messaging contacts, not full contact list
+**Symptom:** `!contacts` returns only a handful of contacts who sent messages during the current session.
+**Root cause:** Manual `contacts.upsert` / `chats.set` listeners miss the bulk sync that Baileys does on connect. `makeInMemoryStore` is the correct Baileys API for this — it subscribes to ALL relevant events internally and builds a complete snapshot.
+**Fix:** Replaced all manual `contactsStore`/`chatsStore` Maps with `makeInMemoryStore` from Baileys.
+- `waStore.bind(sock.ev)` wires it to all sync events automatically
+- `waStore.contacts` → plain object keyed by JID, has `.name` (phone-saved) and `.notify` (WA name)
+- `waStore.chats.all()` → all known chats
+- Store is persisted to `data/wa-store.json` every 30s, loaded on restart
+- `searchContacts()` now searches `waStore.contacts` → `waStore.chats` → `historyStore` in order
+**File:** `src/whatsapp/client.js` (full rewrite of contact tracking)
+
+---
+
 ## Current known issues / next steps
 
-1. **Verify `!contacts` lists ALL chats** after `chats.set` sync — user needs to restart and test.
-2. **Verify `!activate [name]` works end-to-end** after contact resolution fix — activate → receive message → auto-reply in style.
+1. **Verify `!contacts` lists ALL contacts** after switching to `makeInMemoryStore` — user needs to restart and test.
+2. **Verify `!activate [name]` works end-to-end** — activate → receive message → auto-reply in style.
 3. **TASK-13: Ollama provider** (Phase 2) — not started. Groq is working fine for now.
 4. **Style profile quality** — untested end-to-end. The `analyzeStyle` + `fromBaileysMessages` pipeline needs a real activation to verify output quality.
 

@@ -4,25 +4,31 @@ import makeWASocket, {
   fetchLatestBaileysVersion,
   Browsers,
   jidNormalizedUser,
+  makeInMemoryStore,
 } from '@whiskeysockets/baileys'
 import { Boom } from '@hapi/boom'
 import qrcode from 'qrcode-terminal'
 import pino from 'pino'
+import { writeFileSync, readFileSync, existsSync } from 'fs'
 
 const logger = pino({ level: 'silent' }).child({ module: 'whatsapp-client' })
 
-/**
- * Create and return a connected WhatsApp client.
- *
- * @param {(msg: { jid: string, senderName: string, text: string, timestamp: number }) => void} onMessage
- * @returns {Promise<{ sendMessage: Function, getSelfJid: Function, getContactName: Function }>}
- */
+const STORE_PATH = './data/wa-store.json'
+
 export async function createWhatsAppClient(onMessage) {
   let selfJid = null
   let sock = null
   const historyStore = new Map()  // jid → WAMessage[]
-  const contactsStore = new Map() // jid → { id, name, notify }
-  const chatsStore = new Map()    // jid → { id, name, ... }
+
+  // makeInMemoryStore tracks contacts, chats, messages automatically
+  const waStore = makeInMemoryStore({ logger })
+  if (existsSync(STORE_PATH)) {
+    try { waStore.readFromFile(STORE_PATH) } catch {}
+  }
+  // Persist store every 30s so contacts survive restarts
+  setInterval(() => {
+    try { waStore.writeToFile(STORE_PATH) } catch {}
+  }, 30_000)
 
   async function connect() {
     const { state, saveCreds } = await useMultiFileAuthState('./data/session')
@@ -36,43 +42,10 @@ export async function createWhatsAppClient(onMessage) {
       logger,
     })
 
+    // Bind the in-memory store to the socket — it subscribes to all sync events
+    waStore.bind(sock.ev)
+
     sock.ev.on('creds.update', saveCreds)
-
-    sock.ev.on('contacts.upsert', (contacts) => {
-      for (const c of contacts) {
-        if (c.id) contactsStore.set(c.id, c)
-      }
-    })
-
-    sock.ev.on('contacts.update', (updates) => {
-      for (const u of updates) {
-        if (!u.id) continue
-        const existing = contactsStore.get(u.id) ?? {}
-        contactsStore.set(u.id, { ...existing, ...u })
-      }
-    })
-
-    // chats.set fires on connect with ALL known chats (including name/metadata)
-    sock.ev.on('chats.set', ({ chats }) => {
-      for (const chat of chats) {
-        if (chat.id) chatsStore.set(chat.id, chat)
-      }
-      console.log(`[client] Loaded ${chatsStore.size} chats`)
-    })
-
-    sock.ev.on('chats.upsert', (chats) => {
-      for (const chat of chats) {
-        if (chat.id) chatsStore.set(chat.id, chat)
-      }
-    })
-
-    sock.ev.on('chats.update', (updates) => {
-      for (const u of updates) {
-        if (!u.id) continue
-        const existing = chatsStore.get(u.id) ?? {}
-        chatsStore.set(u.id, { ...existing, ...u })
-      }
-    })
 
     sock.ev.on('connection.update', async (update) => {
       const { connection, lastDisconnect, qr } = update
@@ -83,7 +56,6 @@ export async function createWhatsAppClient(onMessage) {
       }
 
       if (connection === 'open') {
-        // Normalize strips the :0 device suffix so it matches remoteJid in self-chat
         selfJid = jidNormalizedUser(sock.user.id)
         console.log(`WhatsApp connected as ${selfJid}`)
       }
@@ -111,6 +83,7 @@ export async function createWhatsAppClient(onMessage) {
         if (!historyStore.has(jid)) historyStore.set(jid, [])
         historyStore.get(jid).push(msg)
       }
+      console.log(`[client] History loaded for ${historyStore.size} chats`)
     })
 
     sock.ev.on('messages.upsert', ({ messages, type }) => {
@@ -124,7 +97,6 @@ export async function createWhatsAppClient(onMessage) {
         const remoteJid = key.remoteJid
         const fromMe = key.fromMe === true
 
-        // Extract text from supported message types
         const text =
           message.conversation ||
           message.extendedTextMessage?.text ||
@@ -132,10 +104,7 @@ export async function createWhatsAppClient(onMessage) {
 
         if (!text) continue
 
-        // Drop append-type messages that aren't commands (reduces noise)
         if (type === 'append' && !text.trimStart().startsWith('!')) continue
-
-        // Drop outgoing messages unless they're a command (start with !)
         if (fromMe && !text.trimStart().startsWith('!')) continue
 
         const senderName = pushName || remoteJid
@@ -145,7 +114,6 @@ export async function createWhatsAppClient(onMessage) {
             ? messageTimestamp
             : messageTimestamp?.toNumber?.() ?? Date.now()
 
-        // Commands can come from any chat — pass selfJid so router can identify them
         onMessage({ jid: remoteJid, senderName, text, timestamp, fromMe })
       }
     })
@@ -154,33 +122,21 @@ export async function createWhatsAppClient(onMessage) {
   await connect()
 
   return {
-    /**
-     * Send a text message to a JID.
-     * @param {string} jid
-     * @param {string} text
-     */
     async sendMessage(jid, text) {
       await sock.sendMessage(jid, { text })
     },
 
-    /**
-     * Return the bot's own WhatsApp JID.
-     * @returns {string}
-     */
     getSelfJid() {
       return selfJid
     },
 
     /**
-     * Return a contact's display name if available, otherwise null.
-     * @param {string} jid
-     * @returns {string | null}
+     * Search all known contacts and chats by name (partial, case-insensitive).
+     * Sources in priority order:
+     *   1. waStore.contacts — phone-saved names + WhatsApp notify names (full sync)
+     *   2. waStore.chats — group/chat display names
+     *   3. historyStore pushNames — fallback from message history
      */
-    getContactName(jid) {
-      const contact = sock.store?.contacts?.[jid]
-      return contact?.name ?? contact?.notify ?? null
-    },
-
     searchContacts(nameQuery) {
       const q = (nameQuery ?? '').toLowerCase()
       const seen = new Set()
@@ -189,23 +145,26 @@ export async function createWhatsAppClient(onMessage) {
       const add = (jid, name) => {
         if (!jid || !name || seen.has(jid)) return
         if (jid === 'status@broadcast') return
+        if (jid.endsWith('@lid')) return  // skip LID shadow entries
         if (q && !name.toLowerCase().includes(q)) return
         seen.add(jid)
         results.push({ jid, name })
       }
 
-      // 1. chats.set — all chats with their display name (most complete source)
-      for (const [jid, chat] of chatsStore) {
-        const name = chat.name || contactsStore.get(jid)?.name || contactsStore.get(jid)?.notify
-        if (name) add(jid, name)
-      }
-
-      // 2. contacts.upsert — phone-saved names
-      for (const [jid, c] of contactsStore) {
+      // 1. waStore.contacts — keyed by JID, has .name (phone-saved) and .notify (WA name)
+      const contacts = waStore.contacts ?? {}
+      for (const [jid, c] of Object.entries(contacts)) {
         add(jid, c.name || c.notify)
       }
 
-      // 3. messaging-history pushNames as last resort
+      // 2. waStore.chats — covers any chat not in contacts (groups, businesses, etc.)
+      const chats = waStore.chats?.all?.() ?? []
+      for (const chat of chats) {
+        const name = chat.name || contacts[chat.id]?.name || contacts[chat.id]?.notify
+        if (name) add(chat.id, name)
+      }
+
+      // 3. historyStore pushNames — last resort
       for (const [jid, messages] of historyStore) {
         if (jid.endsWith('@g.us')) continue
         for (const msg of messages) {
