@@ -43,6 +43,10 @@ export function createCommandHandler({ store, client }) {
       return await handleStatus()
     }
 
+    if (command === '!contacts') {
+      return await handleContacts(parts.slice(1).join(' '))
+    }
+
     // Not a command
     return false
   }
@@ -132,6 +136,18 @@ export function createCommandHandler({ store, client }) {
       await client.sendMessage(client.getSelfJid(), msg)
     }
 
+    return true
+  }
+
+  async function handleContacts(query) {
+    const selfJid = client.getSelfJid()
+    const results = client.searchContacts(query)
+    if (results.length === 0) {
+      await client.sendMessage(selfJid, `No contacts found${query ? ` for '${query}'` : ''}.`)
+      return true
+    }
+    const lines = results.slice(0, 20).map(c => `• ${c.name} — ${c.jid}`)
+    await client.sendMessage(selfJid, `Contacts (${results.length} found):\n${lines.join('\n')}`)
     return true
   }
 

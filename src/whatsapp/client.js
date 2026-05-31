@@ -21,6 +21,7 @@ export async function createWhatsAppClient(onMessage) {
   let selfJid = null
   let sock = null
   const historyStore = new Map()  // jid → WAMessage[]
+  const contactsStore = new Map() // jid → { id, name, notify }
 
   async function connect() {
     const { state, saveCreds } = await useMultiFileAuthState('./data/session')
@@ -35,6 +36,20 @@ export async function createWhatsAppClient(onMessage) {
     })
 
     sock.ev.on('creds.update', saveCreds)
+
+    sock.ev.on('contacts.upsert', (contacts) => {
+      for (const c of contacts) {
+        if (c.id) contactsStore.set(c.id, c)
+      }
+    })
+
+    sock.ev.on('contacts.update', (updates) => {
+      for (const u of updates) {
+        if (!u.id) continue
+        const existing = contactsStore.get(u.id) ?? {}
+        contactsStore.set(u.id, { ...existing, ...u })
+      }
+    })
 
     sock.ev.on('connection.update', async (update) => {
       const { connection, lastDisconnect, qr } = update
@@ -143,22 +158,38 @@ export async function createWhatsAppClient(onMessage) {
       return contact?.name ?? contact?.notify ?? null
     },
 
-    findContactByName(nameQuery) {
-      const q = nameQuery.toLowerCase()
-      let best = null
+    searchContacts(nameQuery) {
+      const q = (nameQuery ?? '').toLowerCase()
+      const seen = new Set()
+      const results = []
+
+      const add = (jid, name) => {
+        if (!jid || seen.has(jid)) return
+        if (q && !name.toLowerCase().includes(q)) return
+        seen.add(jid)
+        results.push({ jid, name })
+      }
+
+      // Contacts store (from contacts.upsert sync — has phone-saved names when available)
+      for (const [jid, c] of contactsStore) {
+        if (jid.endsWith('@g.us') || jid === 'status@broadcast') continue
+        add(jid, c.name || c.notify || jid)
+      }
+
+      // History pushNames as fallback
       for (const [jid, messages] of historyStore) {
         if (jid.endsWith('@g.us') || jid === 'status@broadcast') continue
         for (const msg of messages) {
-          const name = msg.pushName
-          if (!name) continue
-          if (name.toLowerCase().includes(q)) {
-            best = { jid, name }
-            break
-          }
+          if (msg.pushName) { add(jid, msg.pushName); break }
         }
-        if (best) break
       }
-      return best
+
+      return results
+    },
+
+    findContactByName(nameQuery) {
+      const results = this.searchContacts(nameQuery)
+      return results[0] ?? null
     },
 
     getHistoryMessages(jid, limit = 200) {
