@@ -33,6 +33,8 @@ export async function createWhatsAppClient(onMessage) {
       browser: Browsers.ubuntu('Chrome'),
       printQRInTerminal: false,
       logger,
+      syncFullHistory: true,
+      getMessage: async () => ({ conversation: '' }),
     })
 
     sock.ev.on('creds.update', saveCreds)
@@ -51,19 +53,35 @@ export async function createWhatsAppClient(onMessage) {
     })
 
     sock.ev.on('contacts.update', (updates) => {
+      if (updates[0]) console.log(`[client] contacts.update sample:`, JSON.stringify(updates[0]).slice(0, 200))
       for (const u of updates) upsertContact(u)
+      console.log(`[client] contacts.update: ${updates.length} items, ${contactsMap.size} total known`)
     })
 
     // chats.set fires on connect with metadata for ALL known chats
     sock.ev.on('chats.set', ({ chats }) => {
       for (const chat of chats) {
         if (!chat.id || chat.id === 'status@broadcast') continue
-        // chats carry a name for groups; for DMs merge into contactsMap
-        if (chat.name && !chat.id.endsWith('@g.us')) {
-          upsertContact({ id: chat.id, notify: chat.name })
-        }
+        if (chat.name) upsertContact({ id: chat.id, notify: chat.name })
       }
-      console.log(`[client] Chats loaded: ${chats.length}`)
+      console.log(`[client] chats.set: ${chats.length} chats`)
+    })
+
+    sock.ev.on('chats.update', (updates) => {
+      for (const chat of updates) {
+        if (!chat.id || chat.id === 'status@broadcast') continue
+        if (chat.name) upsertContact({ id: chat.id, notify: chat.name })
+      }
+      // Log first update to see what fields are available
+      if (updates[0]) console.log(`[client] chats.update sample:`, JSON.stringify(updates[0]).slice(0, 200))
+    })
+
+    sock.ev.on('chats.upsert', (chats) => {
+      for (const chat of chats) {
+        if (!chat.id || chat.id === 'status@broadcast') continue
+        if (chat.name) upsertContact({ id: chat.id, notify: chat.name })
+      }
+      console.log(`[client] chats.upsert: ${chats.length} chats, ${contactsMap.size} contacts known`)
     })
 
     sock.ev.on('connection.update', async (update) => {
