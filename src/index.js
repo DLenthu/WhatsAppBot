@@ -4,12 +4,14 @@ import 'dotenv/config'
 // messages for your phone and the companion device can't decrypt them (expected).
 const _origConsoleError = console.error
 console.error = (...args) => {
-  const msg = String(args[0] ?? '')
+  const msg = String(args[0] ?? '').toLowerCase()
   if (
-    msg.includes('Bad MAC') ||
-    msg.includes('Session error') ||
+    msg.includes('bad mac') ||
+    msg.includes('session error') ||
     msg.includes('failed to decrypt') ||
-    msg.includes('skipping message')
+    msg.includes('skipping message') ||
+    msg.includes('no session record') ||
+    msg.includes('decrypt')
   ) return
   _origConsoleError(...args)
 }
