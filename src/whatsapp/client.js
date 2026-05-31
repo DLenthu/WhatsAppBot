@@ -76,6 +76,12 @@ export async function createWhatsAppClient(onMessage) {
     })
 
     sock.ev.on('messages.upsert', ({ messages, type }) => {
+      console.log(`[DEBUG] messages.upsert type=${type} count=${messages.length} selfJid=${selfJid}`)
+      for (const m of messages) {
+        const t = m.message?.conversation || m.message?.extendedTextMessage?.text || '(no text)'
+        console.log(`[DEBUG]  jid=${m.key.remoteJid} fromMe=${m.key.fromMe} text="${t.slice(0,40)}"`)
+      }
+
       // 'notify' = incoming messages from others
       // 'append' = messages you sent (including self-chat commands)
       // We need both: notify for incoming, append only for self-chat commands
