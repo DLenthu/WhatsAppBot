@@ -18,54 +18,43 @@ export function createDashboard({ store, port }) {
   // Serve static files from public directory
   app.use(express.static(path.join(__dirname, 'public')))
 
-  // API endpoint for status
+  // API endpoint for status (supports parallel multi-account: multiple active chats)
   app.get('/api/status', (req, res) => {
     try {
-      const activeChat = store.getActiveChat()
+      const activeChats = store.getActiveChats()
       const profiles = store.listProfiles()
 
-      // Get recent replies (last 5 bot messages from all contacts or active contact)
-      let recentReplies = []
+      // Collect bot replies across every active contact, plus every profile we have history for
+      const seen = new Set()
+      const sources = [
+        ...activeChats.map(c => ({ jid: c.jid, name: c.name })),
+        ...profiles.map(p => ({ jid: p.jid, name: p.name })),
+      ]
 
-      if (activeChat && activeChat.jid) {
-        // Get history for active contact
-        const history = store.getHistory(activeChat.jid, 50)
-        // Filter for bot messages (role === 'assistant') and take last 5
-        recentReplies = history
-          .filter(msg => msg.role === 'assistant')
-          .slice(-5)
-          .map(msg => ({
-            contact: activeChat.name || activeChat.jid,
+      const allMessages = []
+      for (const src of sources) {
+        if (seen.has(src.jid)) continue
+        seen.add(src.jid)
+        const history = store.getHistory(src.jid, 50)
+        for (const msg of history) {
+          if (msg.role !== 'bot') continue
+          allMessages.push({
+            contact: src.name || src.jid,
             text: msg.text,
-            timestamp: msg.timestamp
-          }))
-      } else {
-        // Get recent bot messages from all profiles
-        const allMessages = []
-        profiles.forEach(profile => {
-          const history = store.getHistory(profile.jid, 50)
-          const botMessages = history
-            .filter(msg => msg.role === 'assistant')
-            .map(msg => ({
-              contact: profile.name || profile.jid,
-              text: msg.text,
-              timestamp: msg.timestamp,
-              jid: profile.jid
-            }))
-          allMessages.push(...botMessages)
-        })
-        // Sort by timestamp descending and take last 5
-        recentReplies = allMessages
-          .sort((a, b) => b.timestamp - a.timestamp)
-          .slice(0, 5)
-          .map(({ contact, text, timestamp }) => ({ contact, text, timestamp }))
+            timestamp: msg.timestamp,
+          })
+        }
       }
 
+      const recentReplies = allMessages
+        .sort((a, b) => b.timestamp - a.timestamp)
+        .slice(0, 5)
+
       res.json({
-        active: activeChat !== null,
-        activeContact: activeChat ? { jid: activeChat.jid, name: activeChat.name } : null,
-        profiles: profiles,
-        recentReplies: recentReplies
+        active: activeChats.length > 0,
+        activeContacts: activeChats,
+        profiles,
+        recentReplies,
       })
     } catch (error) {
       console.error('[Dashboard] Error in /api/status:', error)

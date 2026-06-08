@@ -106,12 +106,19 @@ async function main() {
   console.log('   Type !activate [name] in your self-chat to begin')
   console.log(`   Dashboard: http://localhost:${dashboardPort}`)
 
-  // 9. Graceful shutdown on Ctrl+C
-  process.on('SIGINT', () => {
-    console.log('\n🛑 Shutting down...')
-    dashboard.stop()
+  // 9. Graceful shutdown on Ctrl+C / SIGTERM
+  let shuttingDown = false
+  async function shutdown(signal) {
+    if (shuttingDown) return
+    shuttingDown = true
+    console.log(`\n🛑 ${signal} received, shutting down...`)
+    try { dashboard.stop() } catch (e) { console.error('dashboard.stop failed:', e.message) }
+    try { store.flush?.() } catch (e) { console.error('store.flush failed:', e.message) }
+    try { await client.close?.() } catch (e) { console.error('client.close failed:', e.message) }
     process.exit(0)
-  })
+  }
+  process.on('SIGINT',  () => shutdown('SIGINT'))
+  process.on('SIGTERM', () => shutdown('SIGTERM'))
 }
 
 main().catch((err) => {

@@ -36,8 +36,11 @@ src/dashboard/server.js   — Express status dashboard on port 3000
 
 ## Always Read Before Touching Code
 
-**`UserFeedbackUpdates.md`** — full bug history, fixes applied, and what's still broken.
-This is the most important file to read. Do not skip it.
+Invoke the project context skill immediately at session start:
+```
+/whatsappbot-context
+```
+This reads `UserFeedbackUpdates.md` and gives a compressed briefing of what works, what's broken, and what not to repeat. Do not skip it.
 
 ## Persistent Memory Notes
 

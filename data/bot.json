@@ -1,11 +1,71 @@
 {
   "active_chat": null,
   "message_history": {},
-  "style_profiles": {},
+  "style_profiles": {
+    "919902790372@s.whatsapp.net": {
+      "contactName": "919902790372",
+      "sampleSize": 75,
+      "avgWordCount": 2.5,
+      "lengthCategory": "very short",
+      "language": "English",
+      "detectedNonEnglishWords": [],
+      "usesQuestionMarks": false,
+      "usesExclamations": false,
+      "usesEllipsis": false,
+      "capsFrequency": "occasional",
+      "emojiFrequency": "none",
+      "commonEmojis": [
+        "😂",
+        "😭"
+      ],
+      "commonPhrases": [
+        "gate",
+        "auto",
+        "coming",
+        "booked",
+        "https://www.matiks.org/gamev2/6a08654ceab860285f8228c4/play",
+        "ga",
+        "aa",
+        "lakshmi",
+        "main",
+        "main gate",
+        "ki",
+        "https://www.linkedin.com/safety/go/?url=https%3a%2f%2fwww%2eamazon%2ejobs%2fen%2fjobs%2f10407654%2fsde-1&urlhash=pvcs&mt=akcuqfpqppz9o9_3pfypop6cjfjllyvvsncu_gymcfnw0a3x5dw80mvthcggb40w2rnqnele0qvb3wiomexj0x0umgoqxelrpcmrlnfsxhkcez9q7eqx_4gdsq&issdui=true",
+        "https://www.matiks.org/gamev2/69fc7e59d3866f9be40d44dc/play",
+        "https://www.youtube.com/shorts/08hsio9n4xy",
+        "ee18b128@smail.iitm.ac.in"
+      ],
+      "avgMessagesPerExchange": 1.8,
+      "capitalizationStyle": "normally capitalized",
+      "punctuationStyle": "rarely uses end punctuation",
+      "abbreviations": [
+        "le",
+        "bro"
+      ],
+      "sampleMessages": [
+        "https://www.linkedin.com/safety/go/?url=https%3A%2F%2Fwww%2Eamazon%2Ejobs%2Fen%2Fjobs%2F10407654%2Fsde-1&urlhash=pvCs&mt=aKCUQfpQppZ9O9_3PFypOP6CjFJlLYvVSnCU_gyMcfNW0a3x5Dw80mVThcGGb40W2rnqNElE0qVb3WIOMeXJ0x0umGOqxelRPcmrLnFsxHKCEZ9Q7EQx_4GDsQ&isSdui=true",
+        "https://www.matiks.org/gameV2/6a0866d7eab860285f827155/play",
+        "She's screaming",
+        "Narayana?",
+        "Is he there?",
+        "Ok"
+      ],
+      "styleNotes": "Writes in very short messages (avg 2.5 words). casual and direct tone.",
+      "analyzedAt": 1780935724369
+    }
+  },
   "contact_hints": {
-    "120363424326214375@g.us": "MV SHASHANK",
+    "120363424326214375@g.us": "Tarun V",
     "120363180772563224@newsletter": "120363180772563224@newsletter",
     "51290952474739@lid": "51290952474739@lid",
-    "68719577423981@lid": "Bhargav Dodla"
+    "68719577423981@lid": "Bhargav Dodla",
+    "88983166029846@lid": "𝐌𝐚𝐡𝐚",
+    "268929662500962@lid": "Sudha Dodla"
+  },
+  "active_chats": {
+    "919902790372@s.whatsapp.net": {
+      "jid": "919902790372@s.whatsapp.net",
+      "name": "919902790372"
+    }
   }
 }

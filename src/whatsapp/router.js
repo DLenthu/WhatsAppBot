@@ -12,15 +12,6 @@
  * @param {string} deps.selfJid - The bot's own WhatsApp JID
  * @returns {Object} Router with route() method
  */
-// When a profile was saved by name (from import-chat.js), re-key it under the JID on first contact
-function migrateProfileToJid(store, name, jid) {
-  if (store.getProfile(jid)) return  // already keyed by JID
-  const byName = store.getProfile(name)
-  if (byName) {
-    store.saveProfile(jid, byName)
-  }
-}
-
 const COMMAND_JID = process.env.COMMAND_JID
 
 export function createMessageRouter({ store, commandHandler, onActiveMessage, client }) {
@@ -34,35 +25,44 @@ export function createMessageRouter({ store, commandHandler, onActiveMessage, cl
    * @returns {Promise<void>}
    */
   async function route(message) {
-    const { jid, senderName, text, timestamp, fromMe } = message
+    const { jid, altJid, senderName, text, timestamp, fromMe } = message
 
     // 1. Commands: messages from your designated command chat only
     const commandJid = COMMAND_JID || client.getSelfJid()
-    // Match phone-number JID, LID (@lid), or self JID — WhatsApp uses LIDs on newer clients
     const isCommand = fromMe && (jid === commandJid || jid === client.getSelfJid() || (!COMMAND_JID && jid.endsWith('@lid')))
     if (isCommand) {
       await commandHandler.handle({ jid, text })
       return
     }
 
-    // 2. Check if this is from the active contact
-    const activeChat = store.getActiveChat()
-    if (activeChat && activeChat.jid === jid) {
-      // Save contact hint and migrate name-keyed profile to JID on first contact
+    // 2. Active-chat match. WhatsApp's new LID protocol: same contact has TWO JIDs (lid + phone).
+    // Try the remoteJid first, then the alt (senderPn), then via the client's alias map.
+    let activeChat = store.getActiveChatByJid(jid)
+    let matchedJid = jid
+    if (!activeChat && altJid) {
+      activeChat = store.getActiveChatByJid(altJid)
+      if (activeChat) matchedJid = altJid
+    }
+    if (!activeChat) {
+      const alias = client.getAltJid?.(jid)
+      if (alias) {
+        activeChat = store.getActiveChatByJid(alias)
+        if (activeChat) matchedJid = alias
+      }
+    }
+
+    if (activeChat) {
+      console.log(`[router] Active message from ${senderName} (${jid}) → matched as ${matchedJid} → generating reply`)
       store.saveContactHint(senderName, jid)
-      migrateProfileToJid(store, senderName, jid)
-
-      // Append message to history
+      // Use the actual remote JID (where messages arrive) for history & reply destination
       store.appendMessage({ jid, role: 'user', text, timestamp })
-
-      // Trigger the callback (response generator will handle generating a response)
       await onActiveMessage({ jid, senderName, text, timestamp })
       return
     }
 
-    // 3. Otherwise, just learn this contact and migrate any name-keyed profile to JID
+    // 3. Otherwise, just learn this contact
+    console.log(`[router] Ignored message from ${senderName} (${jid}${altJid ? ` / ${altJid}` : ''}) — not in active set`)
     store.saveContactHint(senderName, jid)
-    migrateProfileToJid(store, senderName, jid)
   }
 
   return { route }

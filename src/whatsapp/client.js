@@ -8,8 +8,7 @@ import makeWASocket, {
 import { Boom } from '@hapi/boom'
 import qrcode from 'qrcode-terminal'
 import pino from 'pino'
-import { existsSync, readFileSync, writeFileSync } from 'fs'
-import { mkdirSync } from 'fs'
+import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync } from 'fs'
 
 const logger = pino({ level: 'silent' }).child({ module: 'whatsapp-client' })
 const CONTACTS_PATH = './data/contacts.json'
@@ -33,15 +32,33 @@ function savePersistedContacts(map) {
 export async function createWhatsAppClient(onMessage) {
   let selfJid = null
   let sock = null
-  const historyStore = new Map()
+  const historyStore = new Map()               // in-memory only; populated by Baileys sync on connect
   const contactsMap = loadPersistedContacts()  // survives restarts
+  // WhatsApp's newer protocol uses @lid (link id) JIDs for personal chats instead of @s.whatsapp.net.
+  // Same person can appear under both. We track the mapping so active-chat matching works for either.
+  const jidAliasMap = new Map()                // bidirectional: lid ↔ phone JID
+
+  function recordJidAlias(a, b) {
+    if (!a || !b || a === b) return
+    jidAliasMap.set(a, b)
+    jidAliasMap.set(b, a)
+  }
+
+  let saveContactsTimer = null
+  function scheduleSaveContacts() {
+    if (saveContactsTimer) clearTimeout(saveContactsTimer)
+    saveContactsTimer = setTimeout(() => {
+      saveContactsTimer = null
+      savePersistedContacts(contactsMap)
+    }, 2000)
+  }
 
   function upsertContact(c) {
     if (!c.id) return
     const existing = contactsMap.get(c.id) ?? {}
     const merged = { ...existing, ...c }
     contactsMap.set(c.id, merged)
-    savePersistedContacts(contactsMap)
+    scheduleSaveContacts()
   }
 
   async function connect() {
@@ -54,7 +71,7 @@ export async function createWhatsAppClient(onMessage) {
       browser: Browsers.ubuntu('Chrome'),
       printQRInTerminal: false,
       logger,
-      syncFullHistory: true,
+      syncFullHistory: false,
       getMessage: async () => ({ conversation: '' }),
     })
 
@@ -107,12 +124,17 @@ export async function createWhatsAppClient(onMessage) {
         const statusCode = err instanceof Boom ? err.output?.statusCode : null
         console.log(`WhatsApp disconnected. Code: ${statusCode} | Reason: ${err?.message ?? 'unknown'}`)
         if (statusCode === DisconnectReason.loggedOut) {
-          console.log('Logged out — delete data/session and restart.')
-          process.exit(1)
+          console.log('Logged out (device forgotten) — clearing session, reconnecting for new QR...')
+          try { rmSync('./data/session', { recursive: true, force: true }) } catch {}
+          try { sock.ev.removeAllListeners() } catch {}
+          try { sock.end?.() } catch {}
+          setImmediate(() => connect().catch(err => console.error('[client] reconnect failed:', err)))
         } else {
           console.log('Reconnecting in 3s...')
           await new Promise(r => setTimeout(r, 3000))
-          await connect()
+          try { sock.ev.removeAllListeners() } catch {}
+          try { sock.end?.() } catch {}
+          setImmediate(() => connect().catch(err => console.error('[client] reconnect failed:', err)))
         }
       }
     })
@@ -125,7 +147,9 @@ export async function createWhatsAppClient(onMessage) {
           upsertContact({ id: jid, notify: msg.pushName })
         }
         if (!historyStore.has(jid)) historyStore.set(jid, [])
-        historyStore.get(jid).push(msg)
+        const arr = historyStore.get(jid)
+        arr.push(msg)
+        if (arr.length > 500) arr.splice(0, arr.length - 500)
       }
       console.log(`[client] History synced: ${historyStore.size} chats`)
     })
@@ -138,10 +162,20 @@ export async function createWhatsAppClient(onMessage) {
         if (!message) continue
 
         const remoteJid = key.remoteJid
+        if (!remoteJid || remoteJid === 'status@broadcast') continue
+        if (remoteJid.endsWith('@newsletter') || remoteJid.endsWith('@g.us')) continue
         const fromMe = key.fromMe === true
 
-        // Learn every sender's name from live messages
-        if (pushName && !fromMe) upsertContact({ id: remoteJid, notify: pushName })
+        // WhatsApp's newer protocol: messages arrive with @lid as remoteJid; the phone-JID is in senderPn.
+        // Record the mapping so we can match active chats stored under either format.
+        const senderPn = key.senderPn || null
+        if (senderPn) recordJidAlias(remoteJid, senderPn)
+
+        // Learn every sender's name from live messages (record under both forms if known)
+        if (pushName && !fromMe) {
+          upsertContact({ id: remoteJid, notify: pushName })
+          if (senderPn) upsertContact({ id: senderPn, notify: pushName })
+        }
 
         const text =
           message.conversation ||
@@ -152,13 +186,15 @@ export async function createWhatsAppClient(onMessage) {
         if (type === 'append' && !text.trimStart().startsWith('!')) continue
         if (fromMe && !text.trimStart().startsWith('!')) continue
 
-        const senderName = pushName || remoteJid
+        const senderName = pushName || remoteJid.replace(/@.*/, '')
         const timestamp =
           typeof messageTimestamp === 'number'
             ? messageTimestamp
             : messageTimestamp?.toNumber?.() ?? Date.now()
 
-        onMessage({ jid: remoteJid, senderName, text, timestamp, fromMe })
+        onMessage({ jid: remoteJid, altJid: senderPn, senderName, text, timestamp, fromMe }).catch(err =>
+          console.error('[client] Unhandled error in message handler:', err)
+        )
       }
     })
   }
@@ -167,11 +203,38 @@ export async function createWhatsAppClient(onMessage) {
 
   return {
     async sendMessage(jid, text) {
-      await sock.sendMessage(jid, { text })
+      return await sock.sendMessage(jid, { text })
+    },
+
+    async editMessage(jid, key, text) {
+      try {
+        return await sock.sendMessage(jid, { text, edit: key })
+      } catch {
+        // Some WhatsApp clients/versions don't accept edits — silently skip
+        return null
+      }
     },
 
     getSelfJid() {
       return selfJid
+    },
+
+    getSelfName() {
+      return sock?.user?.name || sock?.user?.verifiedName || sock?.user?.notify || null
+    },
+
+    // Returns the alternate JID (LID ↔ phone) for the given JID, if we've seen the mapping.
+    getAltJid(jid) {
+      return jidAliasMap.get(jid) || null
+    },
+
+    async close() {
+      try { sock?.end?.() } catch {}
+      if (saveContactsTimer) {
+        clearTimeout(saveContactsTimer)
+        saveContactsTimer = null
+      }
+      savePersistedContacts(contactsMap)
     },
 
     /**
@@ -180,20 +243,32 @@ export async function createWhatsAppClient(onMessage) {
      */
     searchContacts(nameQuery) {
       const q = (nameQuery ?? '').trim().toLowerCase()
+      const qDigits = q.replace(/\D/g, '')
+      const cmdJid = process.env.COMMAND_JID
       const results = []
+      const seenNames = new Set()  // dedupe — a contact under both @lid and @s.whatsapp.net
 
       for (const [jid, c] of contactsMap) {
         if (jid === 'status@broadcast') continue
-        if (jid.endsWith('@g.us') || jid.endsWith('@lid')) continue
+        if (jid.endsWith('@g.us') || jid.endsWith('@newsletter')) continue
+        if (jid === selfJid || jid === cmdJid) continue  // skip the bot's own chat
 
         const name = c.name || c.notify || ''
-        const phone = jid.replace('@s.whatsapp.net', '')
+        // For @lid JIDs we can't extract a phone from the JID itself; use the alias map.
+        const phoneJid = jid.endsWith('@s.whatsapp.net')
+          ? jid
+          : jidAliasMap.get(jid)
+        const phone = phoneJid ? phoneJid.replace('@s.whatsapp.net', '') : ''
 
         const matchesName = name && name.toLowerCase().includes(q)
-        const matchesPhone = phone.includes(q.replace(/\D/g, ''))
+        const matchesPhone = qDigits && phone.includes(qDigits)
 
         if (!q || matchesName || matchesPhone) {
-          results.push({ jid, name: name || phone })
+          const displayName = name || phone || jid
+          const dedupeKey = displayName.toLowerCase()
+          if (seenNames.has(dedupeKey)) continue
+          seenNames.add(dedupeKey)
+          results.push({ jid, name: displayName })
         }
       }
 

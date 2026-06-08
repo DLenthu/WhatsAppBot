@@ -6,7 +6,7 @@ export function createLLMProvider() {
   if (provider === 'groq') {
     return createGroqProvider({
       apiKey: process.env.GROQ_API_KEY,
-      model: process.env.GROQ_MODEL || 'llama-3.1-70b-versatile'
+      model: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile'
     })
   }
 

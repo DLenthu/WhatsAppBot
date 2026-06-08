@@ -306,6 +306,86 @@ function generateStyleNotes(profile) {
 }
 
 // ---------------------------------------------------------------------------
+// Capitalization style
+// ---------------------------------------------------------------------------
+
+function detectCapitalizationStyle(myMessages) {
+  if (myMessages.length === 0) return 'unknown';
+  const lowercaseStarts = myMessages.filter(m => {
+    const first = m.text.trim()[0];
+    return first && first === first.toLowerCase() && /[a-z]/.test(first);
+  }).length;
+  const ratio = lowercaseStarts / myMessages.length;
+  if (ratio >= 0.65) return 'mostly lowercase';
+  if (ratio >= 0.35) return 'mixed case';
+  return 'normally capitalized';
+}
+
+// ---------------------------------------------------------------------------
+// Punctuation style
+// ---------------------------------------------------------------------------
+
+function detectPunctuationStyle(myMessages) {
+  if (myMessages.length === 0) return 'unknown';
+  const noPunct = myMessages.filter(m => {
+    const text = m.text.trim();
+    if (!text) return false;
+    const last = text[text.length - 1];
+    return !/[.?!…]/.test(last) && !EMOJI_RE.test(last);
+  }).length;
+  const ratio = noPunct / myMessages.length;
+  if (ratio >= 0.65) return 'rarely uses end punctuation';
+  if (ratio >= 0.35) return 'sometimes omits end punctuation';
+  return 'normally punctuated';
+}
+
+// ---------------------------------------------------------------------------
+// Abbreviation / informal word detection
+// ---------------------------------------------------------------------------
+
+const KNOWN_ABBREVIATIONS = [
+  'u', 'ur', 'r', 'k', 'ya', 'yep', 'nope', 'bro', 'da', 'ra', 'na', 'le',
+  'lol', 'lmao', 'lmfao', 'haha', 'hehe', 'omg', 'wtf', 'smh',
+  'btw', 'tbh', 'ngl', 'idk', 'idc', 'imo', 'nvm', 'ikr',
+  'ty', 'np', 'rn', 'tmr', 'tmrw', 'pls', 'plz', 'tho', 'tfw',
+  'msg', 'dm', 'gg', 'fr', 'frfr',
+];
+
+function detectAbbreviations(tokenizedMessages) {
+  const counts = new Map();
+  for (const tokens of tokenizedMessages) {
+    for (const t of tokens) {
+      const lower = t.toLowerCase();
+      if (KNOWN_ABBREVIATIONS.includes(lower)) {
+        counts.set(lower, (counts.get(lower) ?? 0) + 1);
+      }
+    }
+  }
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 8)
+    .map(([abbr]) => abbr);
+}
+
+// ---------------------------------------------------------------------------
+// Sample messages (representative short examples of the user's actual writing)
+// ---------------------------------------------------------------------------
+
+function getSampleMessages(myMessages, count = 6) {
+  const candidates = myMessages.filter(m => {
+    const words = m.text.trim().split(/\s+/).length;
+    return words >= 1 && words <= 15 && m.text.trim().length > 1;
+  });
+  if (candidates.length === 0) return [];
+  const step = Math.max(1, Math.floor(candidates.length / count));
+  const samples = [];
+  for (let i = 0; i < count && i * step < candidates.length; i++) {
+    samples.push(candidates[i * step].text.trim());
+  }
+  return samples;
+}
+
+// ---------------------------------------------------------------------------
 // Main export
 // ---------------------------------------------------------------------------
 
@@ -321,23 +401,15 @@ export function analyzeStyle(parsedExport) {
   const myMessages = messages.filter(m => m.isMe);
   const sampleSize = myMessages.length;
 
-  // Edge case: fewer than 10 user messages
   if (sampleSize < 10) {
     return {
-      contactName,
-      sampleSize,
-      avgWordCount: 0,
-      lengthCategory: 'unknown',
-      language: 'unknown',
-      detectedNonEnglishWords: [],
-      usesQuestionMarks: false,
-      usesExclamations: false,
-      usesEllipsis: false,
-      capsFrequency: 'none',
-      emojiFrequency: 'none',
-      commonEmojis: [],
-      commonPhrases: [],
-      avgMessagesPerExchange: 0,
+      contactName, sampleSize,
+      avgWordCount: 0, lengthCategory: 'unknown', language: 'unknown',
+      detectedNonEnglishWords: [], usesQuestionMarks: false, usesExclamations: false,
+      usesEllipsis: false, capsFrequency: 'none', emojiFrequency: 'none',
+      commonEmojis: [], commonPhrases: [], avgMessagesPerExchange: 0,
+      capitalizationStyle: 'unknown', punctuationStyle: 'unknown',
+      abbreviations: [], sampleMessages: [],
       styleNotes: 'Insufficient data (fewer than 10 messages). Style analysis is unreliable.',
     };
   }
@@ -423,7 +495,19 @@ export function analyzeStyle(parsedExport) {
   const avgMessagesPerExchange = computeAvgMessagesPerExchange(messages);
 
   // ------------------------------------------------------------------
-  // 7. Style notes
+  // 7. Capitalization & punctuation style
+  // ------------------------------------------------------------------
+  const capitalizationStyle = detectCapitalizationStyle(myMessages);
+  const punctuationStyle = detectPunctuationStyle(myMessages);
+
+  // ------------------------------------------------------------------
+  // 8. Abbreviations & sample messages
+  // ------------------------------------------------------------------
+  const abbreviations = detectAbbreviations(tokenizedMessages);
+  const sampleMessages = getSampleMessages(myMessages, 6);
+
+  // ------------------------------------------------------------------
+  // 9. Style notes
   // ------------------------------------------------------------------
   const partialProfile = {
     avgWordCount,
@@ -441,20 +525,15 @@ export function analyzeStyle(parsedExport) {
   // Assemble and return
   // ------------------------------------------------------------------
   return {
-    contactName,
-    sampleSize,
-    avgWordCount,
-    lengthCategory,
-    language,
-    detectedNonEnglishWords,
-    usesQuestionMarks,
-    usesExclamations,
-    usesEllipsis,
-    capsFrequency,
-    emojiFrequency,
-    commonEmojis,
+    contactName, sampleSize,
+    avgWordCount, lengthCategory,
+    language, detectedNonEnglishWords,
+    usesQuestionMarks, usesExclamations, usesEllipsis, capsFrequency,
+    emojiFrequency, commonEmojis,
     commonPhrases,
     avgMessagesPerExchange,
+    capitalizationStyle, punctuationStyle,
+    abbreviations, sampleMessages,
     styleNotes,
   };
 }

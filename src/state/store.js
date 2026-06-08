@@ -52,9 +52,8 @@ function createSQLiteStore(dbPath) {
 
   // Initialize schema
   db.exec(`
-    CREATE TABLE IF NOT EXISTS active_chat (
-      id INTEGER PRIMARY KEY CHECK (id = 1),
-      jid TEXT,
+    CREATE TABLE IF NOT EXISTS active_chats (
+      jid TEXT PRIMARY KEY,
       name TEXT
     );
 
@@ -86,23 +85,25 @@ function createSQLiteStore(dbPath) {
   `)
 
   return {
-    // Active chat management
-    setActiveChat({ jid, name }) {
-      const existing = db.prepare('SELECT id FROM active_chat WHERE id = 1').get()
-      if (existing) {
-        db.prepare('UPDATE active_chat SET jid = ?, name = ? WHERE id = 1').run(jid, name)
-      } else {
-        db.prepare('INSERT INTO active_chat (id, jid, name) VALUES (1, ?, ?)').run(jid, name)
-      }
+    // Active chats management (parallel multi-account)
+    addActiveChat({ jid, name }) {
+      db.prepare('INSERT OR REPLACE INTO active_chats (jid, name) VALUES (?, ?)').run(jid, name)
     },
 
-    getActiveChat() {
-      const row = db.prepare('SELECT jid, name FROM active_chat WHERE id = 1').get()
-      return row || null
+    removeActiveChat(jid) {
+      db.prepare('DELETE FROM active_chats WHERE jid = ?').run(jid)
     },
 
-    clearActiveChat() {
-      db.prepare('DELETE FROM active_chat WHERE id = 1').run()
+    getActiveChatByJid(jid) {
+      return db.prepare('SELECT jid, name FROM active_chats WHERE jid = ?').get(jid) ?? null
+    },
+
+    getActiveChats() {
+      return db.prepare('SELECT jid, name FROM active_chats').all()
+    },
+
+    clearAllActiveChats() {
+      db.prepare('DELETE FROM active_chats').run()
     },
 
     // Message history management
@@ -223,6 +224,7 @@ function createJSONStore(dbPath) {
     dbPath === './data/bot.db'
       ? './data/bot.json'
       : dbPath.replace(/\.db$/, '.json')
+  const tmpPath = jsonPath + '.tmp'
 
   // Ensure directory exists
   const dir = path.dirname(jsonPath)
@@ -230,114 +232,188 @@ function createJSONStore(dbPath) {
     fs.mkdirSync(dir, { recursive: true })
   }
 
-  // Initialize data structure
-  const defaultData = {
-    active_chat: null,
-    message_history: {},
-    style_profiles: {},
-    contact_hints: {},
-  }
-
-  function loadData() {
-    if (fs.existsSync(jsonPath)) {
-      try {
-        const content = fs.readFileSync(jsonPath, 'utf-8')
-        return JSON.parse(content)
-      } catch (err) {
-        console.warn('[Store] Failed to parse JSON data, using defaults:', err.message)
-        return defaultData
-      }
+  // Fix 5: Initialize missing fields on load
+  function normalizeState(data) {
+    if (!data || typeof data !== 'object') {
+      data = {}
     }
-    return defaultData
+    if (!data.active_chats || typeof data.active_chats !== 'object') {
+      data.active_chats = {}
+    }
+    if (!data.message_history || typeof data.message_history !== 'object') {
+      data.message_history = {}
+    }
+    if (!data.style_profiles || typeof data.style_profiles !== 'object') {
+      data.style_profiles = {}
+    }
+    if (!data.contact_hints || typeof data.contact_hints !== 'object') {
+      data.contact_hints = {}
+    }
+    // Fix 4: Migrate legacy singular `active_chat` to `active_chats`
+    if (data.active_chat) {
+      if (Object.keys(data.active_chats).length === 0) {
+        if (data.active_chat.jid) {
+          data.active_chats[data.active_chat.jid] = data.active_chat
+        }
+      }
+      delete data.active_chat
+    }
+    return data
   }
 
-  function saveData(data) {
+  // Fix 1: Load state into memory ONCE at startup
+  let state
+  if (fs.existsSync(jsonPath)) {
     try {
-      fs.writeFileSync(jsonPath, JSON.stringify(data, null, 2), 'utf-8')
+      const content = fs.readFileSync(jsonPath, 'utf-8')
+      state = normalizeState(JSON.parse(content))
+    } catch (err) {
+      console.warn('[Store] Failed to parse JSON data, using defaults:', err.message)
+      state = normalizeState({})
+    }
+  } else {
+    state = normalizeState({})
+  }
+
+  // Fix 2 + Fix 6: Debounced async writes with atomic rename
+  let saveTimer = null
+  let savePending = false
+  let saveInFlight = false
+  const SAVE_DEBOUNCE_MS = 300
+
+  async function performSave() {
+    if (saveInFlight) {
+      // A save is already running. Mark pending so we save again after.
+      savePending = true
+      return
+    }
+    saveInFlight = true
+    savePending = false
+    try {
+      const payload = JSON.stringify(state, null, 2)
+      // Fix 6: Atomic write — write to .tmp then rename
+      await fs.promises.writeFile(tmpPath, payload, 'utf-8')
+      await fs.promises.rename(tmpPath, jsonPath)
     } catch (err) {
       console.error('[Store] Failed to save JSON data:', err)
+    } finally {
+      saveInFlight = false
+      if (savePending) {
+        // Coalesce: another change occurred while we were writing — flush again
+        savePending = false
+        scheduleSave()
+      }
     }
+  }
+
+  function scheduleSave() {
+    if (saveInFlight) {
+      // Defer until current write completes
+      savePending = true
+      return
+    }
+    if (saveTimer) {
+      clearTimeout(saveTimer)
+    }
+    saveTimer = setTimeout(() => {
+      saveTimer = null
+      performSave()
+    }, SAVE_DEBOUNCE_MS)
   }
 
   return {
-    // Active chat management
-    setActiveChat({ jid, name }) {
-      const data = loadData()
-      data.active_chat = { jid, name }
-      saveData(data)
+    // Active chats management (parallel multi-account)
+    addActiveChat({ jid, name }) {
+      state.active_chats[jid] = { jid, name }
+      scheduleSave()
     },
 
-    getActiveChat() {
-      const data = loadData()
-      return data.active_chat || null
+    removeActiveChat(jid) {
+      delete state.active_chats[jid]
+      scheduleSave()
     },
 
-    clearActiveChat() {
-      const data = loadData()
-      data.active_chat = null
-      saveData(data)
+    getActiveChatByJid(jid) {
+      return state.active_chats[jid] ?? null
+    },
+
+    getActiveChats() {
+      return Object.values(state.active_chats)
+    },
+
+    clearAllActiveChats() {
+      state.active_chats = {}
+      scheduleSave()
     },
 
     // Message history management
     appendMessage({ jid, role, text, timestamp }) {
-      const data = loadData()
-      if (!data.message_history[jid]) {
-        data.message_history[jid] = []
+      if (!state.message_history[jid]) {
+        state.message_history[jid] = []
       }
 
-      data.message_history[jid].push({ role, text, timestamp })
+      state.message_history[jid].push({ role, text, timestamp })
 
       // Prune to 50 messages per JID
-      if (data.message_history[jid].length > 50) {
-        data.message_history[jid] = data.message_history[jid].slice(-50)
+      if (state.message_history[jid].length > 50) {
+        state.message_history[jid] = state.message_history[jid].slice(-50)
       }
 
-      saveData(data)
+      scheduleSave()
     },
 
     getHistory(jid, limit = 10) {
-      const data = loadData()
-      const history = data.message_history[jid] || []
-
+      const history = state.message_history[jid] || []
       // Return in chronological order (oldest first), limited
       return history.slice(-limit)
     },
 
     // Style profile management
     saveProfile(jid, profileJson) {
-      const data = loadData()
-      data.style_profiles[jid] = typeof profileJson === 'string' ? JSON.parse(profileJson) : profileJson
-      saveData(data)
+      state.style_profiles[jid] =
+        typeof profileJson === 'string' ? JSON.parse(profileJson) : profileJson
+      scheduleSave()
     },
 
     getProfile(jid) {
-      const data = loadData()
-      return data.style_profiles[jid] || null
+      return state.style_profiles[jid] || null
     },
 
     listProfiles() {
-      const data = loadData()
-      return Object.entries(data.style_profiles).map(([jid]) => ({ jid, name: null }))
+      return Object.entries(state.style_profiles).map(([jid]) => ({ jid, name: null }))
     },
 
     // Contact hint management
     saveContactHint(name, jid) {
-      const data = loadData()
-      data.contact_hints[jid] = name
-      saveData(data)
+      state.contact_hints[jid] = name
+      scheduleSave()
     },
 
     resolveContact(nameQuery) {
       if (!nameQuery) return null
 
       const q = nameQuery.toLowerCase()
-      const data = loadData()
-      for (const [jid, name] of Object.entries(data.contact_hints)) {
+      for (const [jid, name] of Object.entries(state.contact_hints)) {
         if (name.toLowerCase().includes(q)) {
           return { jid, name }
         }
       }
       return null
+    },
+
+    // Fix 3: Sync flush on shutdown — cancels pending debounce and writes immediately
+    flush() {
+      if (saveTimer) {
+        clearTimeout(saveTimer)
+        saveTimer = null
+      }
+      try {
+        const payload = JSON.stringify(state, null, 2)
+        fs.writeFileSync(tmpPath, payload, 'utf-8')
+        fs.renameSync(tmpPath, jsonPath)
+      } catch (err) {
+        console.error('[Store] Failed to flush JSON data:', err)
+      }
     },
   }
 }
