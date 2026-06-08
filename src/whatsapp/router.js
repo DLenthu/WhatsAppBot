@@ -60,8 +60,7 @@ export function createMessageRouter({ store, commandHandler, onActiveMessage, cl
       return
     }
 
-    // 3. Otherwise, just learn this contact
-    console.log(`[router] Ignored message from ${senderName} (${jid}${altJid ? ` / ${altJid}` : ''}) — not in active set`)
+    // 3. Otherwise, just silently learn this contact for future activation lookups
     store.saveContactHint(senderName, jid)
   }
 

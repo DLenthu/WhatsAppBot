@@ -128,7 +128,6 @@ export function createResponseGenerator({ store, llmProvider, client }) {
    * @returns {Promise<void>}
    */
   async function handleMessage({ jid, senderName, text, timestamp }) {
-    const selfJid = client.getSelfJid()
     const userName = client.getSelfName() || 'the user'
 
     try {
@@ -177,25 +176,11 @@ export function createResponseGenerator({ store, llmProvider, client }) {
       // 7. Store bot reply in history
       store.appendMessage({ jid, role: 'bot', text: generatedReply, timestamp: Date.now() })
 
-      // 8. Notify self-chat with a preview
-      const preview =
-        generatedReply.length > 60
-          ? `${generatedReply.slice(0, 60)}...`
-          : generatedReply
-
-      await client.sendMessage(selfJid, `🤖 Replied to ${senderName}: ${preview}`)
+      // No self-chat notification — only !activate/!deactivate surface there.
+      // Terminal still logs via [generator] / [router] for visibility.
     } catch (err) {
+      // Terminal-only — no self-chat notification (per user preference: only !activate/!deactivate surface there)
       console.error(`[ResponseGenerator] Failed to reply to ${senderName} (${jid}):`, err)
-
-      // Notify self-chat of the failure; do NOT send anything to the contact
-      try {
-        await client.sendMessage(
-          selfJid,
-          `⚠️ Bot failed to reply to ${senderName}. Error: ${err.message}`
-        )
-      } catch (notifyErr) {
-        console.error('[ResponseGenerator] Failed to send error notification to self:', notifyErr)
-      }
     }
   }
 
