@@ -163,16 +163,19 @@ export async function createWhatsAppClient(onMessage) {
 
         const remoteJid = key.remoteJid
         if (!remoteJid || remoteJid === 'status@broadcast') continue
-        if (remoteJid.endsWith('@newsletter') || remoteJid.endsWith('@g.us')) continue
+        if (remoteJid.endsWith('@newsletter')) continue
+        const isGroup = remoteJid.endsWith('@g.us')
         const fromMe = key.fromMe === true
 
         // WhatsApp's newer protocol: messages arrive with @lid as remoteJid; the phone-JID is in senderPn.
         // Record the mapping so we can match active chats stored under either format.
-        const senderPn = key.senderPn || null
+        // Skip alias recording for group JIDs — senderPn there refers to the participant, not the group.
+        const senderPn = !isGroup ? (key.senderPn || null) : null
         if (senderPn) recordJidAlias(remoteJid, senderPn)
 
-        // Learn every sender's name from live messages (record under both forms if known)
-        if (pushName && !fromMe) {
+        // Learn sender names from live messages.
+        // For groups, pushName is the individual sender — don't overwrite the group's own name with it.
+        if (pushName && !fromMe && !isGroup) {
           upsertContact({ id: remoteJid, notify: pushName })
           if (senderPn) upsertContact({ id: senderPn, notify: pushName })
         }
@@ -250,18 +253,20 @@ export async function createWhatsAppClient(onMessage) {
 
       for (const [jid, c] of contactsMap) {
         if (jid === 'status@broadcast') continue
-        if (jid.endsWith('@g.us') || jid.endsWith('@newsletter')) continue
-        if (jid === selfJid || jid === cmdJid) continue  // skip the bot's own chat
+        if (jid.endsWith('@newsletter')) continue
+        if (jid === selfJid || jid === cmdJid) continue
 
+        const isGroup = jid.endsWith('@g.us')
         const name = c.name || c.notify || ''
         // For @lid JIDs we can't extract a phone from the JID itself; use the alias map.
-        const phoneJid = jid.endsWith('@s.whatsapp.net')
+        // Groups don't have phone numbers — skip phone matching for them.
+        const phoneJid = !isGroup && jid.endsWith('@s.whatsapp.net')
           ? jid
-          : jidAliasMap.get(jid)
+          : !isGroup ? jidAliasMap.get(jid) : null
         const phone = phoneJid ? phoneJid.replace('@s.whatsapp.net', '') : ''
 
         const matchesName = name && name.toLowerCase().includes(q)
-        const matchesPhone = qDigits && phone.includes(qDigits)
+        const matchesPhone = !isGroup && qDigits && phone.includes(qDigits)
 
         if (!q || matchesName || matchesPhone) {
           const displayName = name || phone || jid
@@ -284,14 +289,24 @@ export async function createWhatsAppClient(onMessage) {
      * from a phone number if no match found in known contacts.
      */
     resolveContact(query) {
+      // Direct group JID (user typed full JID like 120363XXXX@g.us)
+      if (query.endsWith('@g.us')) {
+        const c = contactsMap.get(query)
+        return { jid: query, name: c?.name || c?.notify || query }
+      }
+
       const known = this.findContactByName(query)
       if (known) return known
 
-      // If query looks like a phone number, construct JID directly
       const digits = query.replace(/\D/g, '')
       if (digits.length >= 7) {
-        const jid = `${digits}@s.whatsapp.net`
-        return { jid, name: query }
+        // WhatsApp group JIDs are 18+ digit numeric IDs — phone numbers are ≤15 digits
+        if (digits.length > 15) {
+          const groupJid = `${digits}@g.us`
+          const c = contactsMap.get(groupJid)
+          return { jid: groupJid, name: c?.name || c?.notify || query }
+        }
+        return { jid: `${digits}@s.whatsapp.net`, name: query }
       }
 
       return null

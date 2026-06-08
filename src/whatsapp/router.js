@@ -35,6 +35,9 @@ export function createMessageRouter({ store, commandHandler, onActiveMessage, cl
       return
     }
 
+    // Non-command fromMe messages (e.g. user typing in a group that's active) should not trigger replies.
+    if (fromMe) return
+
     // 2. Active-chat match. WhatsApp's new LID protocol: same contact has TWO JIDs (lid + phone).
     // Try the remoteJid first, then the alt (senderPn), then via the client's alias map.
     let activeChat = store.getActiveChatByJid(jid)
