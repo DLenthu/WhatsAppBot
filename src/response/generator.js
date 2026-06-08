@@ -15,7 +15,7 @@ function buildStickerSection(stickerLibrary) {
     'To reply with a sticker instead of text, output ONLY: STICKER:<filename>',
     'Available stickers:',
     ...stickerLibrary.map(s => `  STICKER:${s.filename} — ${s.description}`),
-    'Use a sticker only when a text reply would feel unnatural (e.g. replying to a sticker with a sticker). If unsure, reply with text.',
+    'Use a sticker whenever it fits the moment naturally — reacting to something funny, replying to a sticker, expressing a vibe. If unsure, reply with text.',
   ].join('\n')
 }
 
