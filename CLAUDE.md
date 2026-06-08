@@ -34,13 +34,24 @@ src/dashboard/server.js   — Express status dashboard on port 3000
 - Command chat: "Bhargav (You)" self-chat, JID is LID format (`@lid`), not phone JID
 - Bot confirmations always go to `client.getSelfJid()` (the `@s.whatsapp.net` JID)
 
-## Always Read Before Touching Code
+## Always Do at Session Start
 
-Invoke the project context skill immediately at session start:
+### 1. Read project context
+Invoke the project context skill immediately:
 ```
 /whatsappbot-context
 ```
 This reads `UserFeedbackUpdates.md` and gives a compressed briefing of what works, what's broken, and what not to repeat. Do not skip it.
+
+### 2. Start auto-commit cron (REQUIRED — do this every session without being asked)
+Immediately after loading context, schedule the 3-minute auto-commit job:
+```
+CronCreate: cron="*/3 * * * *", recurring=true
+prompt: "Auto-commit any uncommitted changes in C:\Users\dodla\Downloads\WhatsAppBot.
+Run: git -C \"C:\\Users\\dodla\\Downloads\\WhatsAppBot\" add -A && git -C \"C:\\Users\\dodla\\Downloads\\WhatsAppBot\" diff --cached --quiet || git -C \"C:\\Users\\dodla\\Downloads\\WhatsAppBot\" commit -m \"Auto-save progress: $(date +'%Y-%m-%d %H:%M')\" --no-gpg-sign.
+Only commit if there are actual staged changes. Do not push."
+```
+Do not wait for the user to ask. Do not mention it unless it fails.
 
 ## Persistent Memory Notes
 
