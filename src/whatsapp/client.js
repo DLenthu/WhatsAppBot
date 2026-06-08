@@ -180,15 +180,22 @@ export async function createWhatsAppClient(onMessage) {
           if (senderPn) upsertContact({ id: senderPn, notify: pushName })
         }
 
-        // Extract sticker thumbnail (PNG bytes) for vision analysis downstream
+        // Extract thumbnails for vision analysis — stickers (PNG) and images (JPEG)
         const stickerThumbnail = message.stickerMessage?.pngThumbnail
           ? Buffer.from(message.stickerMessage.pngThumbnail).toString('base64')
           : null
 
+        const imageThumbnail = message.imageMessage?.jpegThumbnail
+          ? Buffer.from(message.imageMessage.jpegThumbnail).toString('base64')
+          : null
+
+        const imageCaption = message.imageMessage?.caption || null
+
         const text =
           message.conversation ||
           message.extendedTextMessage?.text ||
-          (message.stickerMessage ? '[sticker]' : null)
+          (message.stickerMessage ? '[sticker]' : null) ||
+          (message.imageMessage ? (imageCaption ? `[image caption: ${imageCaption}]` : '[image]') : null)
 
         if (!text) continue
         if (type === 'append' && !text.trimStart().startsWith('!')) continue
@@ -200,7 +207,7 @@ export async function createWhatsAppClient(onMessage) {
             ? messageTimestamp
             : messageTimestamp?.toNumber?.() ?? Date.now()
 
-        onMessage({ jid: remoteJid, altJid: senderPn, senderName, text, timestamp, fromMe, stickerThumbnail }).catch(err =>
+        onMessage({ jid: remoteJid, altJid: senderPn, senderName, text, timestamp, fromMe, stickerThumbnail, imageThumbnail }).catch(err =>
           console.error('[client] Unhandled error in message handler:', err)
         )
       }

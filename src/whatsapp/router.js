@@ -25,7 +25,7 @@ export function createMessageRouter({ store, commandHandler, onActiveMessage, cl
    * @returns {Promise<void>}
    */
   async function route(message) {
-    const { jid, altJid, senderName, text, timestamp, fromMe, stickerThumbnail } = message
+    const { jid, altJid, senderName, text, timestamp, fromMe, stickerThumbnail, imageThumbnail } = message
 
     // 1. Commands: messages from your designated command chat only
     const commandJid = COMMAND_JID || client.getSelfJid()
@@ -59,7 +59,7 @@ export function createMessageRouter({ store, commandHandler, onActiveMessage, cl
       store.saveContactHint(senderName, jid)
       // Use the actual remote JID (where messages arrive) for history & reply destination
       store.appendMessage({ jid, role: 'user', text, timestamp })
-      await onActiveMessage({ jid, senderName, text, timestamp, stickerThumbnail })
+      await onActiveMessage({ jid, senderName, text, timestamp, stickerThumbnail, imageThumbnail })
       return
     }
 

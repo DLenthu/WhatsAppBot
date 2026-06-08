@@ -117,7 +117,7 @@ export function createResponseGenerator({ store, llmProvider, client }) {
   const DEDUP_MAX = 100
   const recentMessageIds = new Set()
 
-  async function handleMessage({ jid, senderName, text, timestamp, stickerThumbnail }) {
+  async function handleMessage({ jid, senderName, text, timestamp, stickerThumbnail, imageThumbnail }) {
     const userName = client.getSelfName() || 'the user'
 
     try {
@@ -136,13 +136,20 @@ export function createResponseGenerator({ store, llmProvider, client }) {
       const profile = store.getProfile(jid) ?? store.getProfile(senderName)
       console.log(`[generator] Profile: ${profile ? `found (${profile.sampleSize} msgs, ${profile.language})` : 'none — using generic style'}`)
 
-      // 1. If this is a sticker and we have a thumbnail, describe it for richer context.
+      // 1. Describe visual content (sticker or image) for richer context.
       let contextText = text
       if (text === '[sticker]' && stickerThumbnail && llmProvider.describeSticker) {
         const description = await llmProvider.describeSticker(stickerThumbnail)
         if (description) {
           contextText = `[sticker: ${description}]`
           console.log(`[generator] Sticker described: ${description}`)
+        }
+      } else if ((text === '[image]' || text?.startsWith('[image caption:')) && imageThumbnail && llmProvider.describeSticker) {
+        const description = await llmProvider.describeSticker(imageThumbnail)
+        if (description) {
+          const caption = text.startsWith('[image caption:') ? text : ''
+          contextText = caption ? `[image: ${description} — caption: "${caption.replace('[image caption: ', '').replace(']', '')}"]` : `[image: ${description}]`
+          console.log(`[generator] Image described: ${description}`)
         }
       }
 

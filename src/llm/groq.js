@@ -34,22 +34,25 @@ export function createGroqProvider({ apiKey, model }) {
       return content.trim()
     },
 
-    // Describe a sticker thumbnail using a vision model.
-    // base64 — PNG thumbnail as a base64 string.
-    // Returns a short description (3-6 words) or null on failure.
-    async describeSticker(base64) {
+    // Describe a visual thumbnail (sticker or image) using a vision model.
+    // base64 — base64-encoded image bytes (PNG for stickers, JPEG for images).
+    // prompt — optional custom description prompt.
+    // Returns a short description or null on failure.
+    async describeSticker(base64, prompt) {
       try {
+        const descPrompt = prompt || 'Describe this image/sticker in 3-8 words (e.g. "laughing face", "dog running on beach", "thumbs up meme"). Just the description, nothing else.'
+        const mimeType = base64.startsWith('/9j') ? 'image/jpeg' : 'image/png'
         const completion = await withTimeout(
           client.chat.completions.create({
             model: VISION_MODEL,
             messages: [{
               role: 'user',
               content: [
-                { type: 'image_url', image_url: { url: `data:image/png;base64,${base64}` } },
-                { type: 'text', text: 'Describe this sticker in 3-6 words (e.g. "laughing face", "thumbs up", "confused cat shrug"). Just the description, nothing else.' },
+                { type: 'image_url', image_url: { url: `data:${mimeType};base64,${base64}` } },
+                { type: 'text', text: descPrompt },
               ],
             }],
-            max_tokens: 30,
+            max_tokens: 50,
             temperature: 0.1,
           }),
           10_000
