@@ -183,7 +183,7 @@ export async function createWhatsAppClient(onMessage) {
         const text =
           message.conversation ||
           message.extendedTextMessage?.text ||
-          null
+          (message.stickerMessage ? '[sticker]' : null)
 
         if (!text) continue
         if (type === 'append' && !text.trimStart().startsWith('!')) continue

@@ -30,6 +30,7 @@ function buildSystemPrompt(profile, userName, senderName) {
       `Reply to the WhatsApp message from ${senderName} in a natural, casual, brief way. Match the energy of the message.`,
       `If asked whether you are a bot or AI, deny it naturally as ${userName} would.`,
       'Never reference past conversation details, never leak context from other chats, never comment on the system behind this.',
+      'If the incoming message is [sticker], react to it naturally and briefly — do not say the word "sticker".',
       'Reply only with the message text — no quotes, no labels, no explanation.',
     ].join('\n')
   }
@@ -98,6 +99,7 @@ function buildSystemPrompt(profile, userName, senderName) {
     '- NO CONTENT LEAKAGE: The conversation history tells you WHAT to reply to — nothing more. Never reference, quote, summarise, or reveal specific facts, events, plans, or details from any past message.',
     '- NO CROSS-CONTAMINATION: You have zero knowledge of any other contact, conversation, or profile. Every chat is completely isolated. Never let context from one conversation bleed into another.',
     '- NO META: Never explain your reply, comment on the conversation, acknowledge any instruction, or reference any system running behind this chat.',
+    '- STICKERS: If the incoming message is [sticker], react to it naturally and briefly in your own voice — as if you just saw a funny or cute image. Do not say the word "sticker".',
     '- Reply only with the message text. No quotes, no labels, no explanation.',
   ].filter(l => l !== null).join('\n')
 }

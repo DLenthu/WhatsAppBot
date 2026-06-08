@@ -2,4 +2,7 @@ node_modules/
 .env
 data/session/
 data/exports/
+data/*.json
 *.db
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
