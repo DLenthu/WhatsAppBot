@@ -12,7 +12,8 @@ function buildStickerSection(stickerLibrary) {
   if (!stickerLibrary || stickerLibrary.length === 0) return ''
   return [
     '━━ STICKER REPLIES ━━',
-    'To reply with a sticker instead of text, output ONLY: STICKER:<filename>',
+    'To reply with a sticker, output ONLY: STICKER:<filename>|<fallback>',
+    'where <fallback> is the emoji or short text you would send if the sticker could not be delivered. Make the fallback fit the context — do not default to 😂.',
     'Available stickers:',
     ...stickerLibrary.map(s => `  STICKER:${s.filename} — ${s.description}`),
     'Use a sticker whenever it fits the moment naturally — reacting to something funny, replying to a sticker, expressing a vibe. If unsure, reply with text.',
@@ -30,7 +31,7 @@ function buildSystemPrompt(profile, userName, senderName, stickerLibrary = []) {
       'Never reference past conversation details, never leak context from other chats, never comment on the system behind this.',
       'If the incoming message is [sticker: ...], react to it naturally and briefly — do not say the word "sticker".',
       stickerSection,
-      'Reply only with message text or a STICKER:<filename> directive. No quotes, no labels, no explanation.',
+      '- Reply only with message text or a STICKER:<filename>|<fallback> directive. No quotes, no labels, no explanation.',
     ].filter(Boolean).join('\n')
   }
 
@@ -169,20 +170,20 @@ export function createResponseGenerator({ store, llmProvider, client }) {
 
       generatedReply = generatedReply.trim().replace(/^["'](.+)["']$/s, '$1').trim()
 
-      // 7. Check if LLM wants to send a sticker
-      const stickerMatch = generatedReply.match(/^STICKER:(.+)$/i)
+      // 7. Check if LLM wants to send a sticker (format: STICKER:filename|fallback)
+      const stickerMatch = generatedReply.match(/^STICKER:([^|]+)\|?(.*)$/i)
       if (stickerMatch) {
         const filename = stickerMatch[1].trim()
+        const fallback = stickerMatch[2].trim() || '👍'
         const stickerPath = `./data/stickers/${filename}`
         try {
           await client.sendSticker(jid, stickerPath)
           store.appendMessage({ jid, role: 'bot', text: `[sticker: ${filename}]`, timestamp: Date.now() })
           console.log(`[generator] Sent sticker: ${filename}`)
         } catch (stickerErr) {
-          console.warn(`[generator] Sticker send failed (${filename}):`, stickerErr.message)
-          // Fall back to a text reply
-          await client.sendMessage(jid, '😂')
-          store.appendMessage({ jid, role: 'bot', text: '😂', timestamp: Date.now() })
+          console.warn(`[generator] Sticker send failed (${filename}), using fallback:`, stickerErr.message)
+          await client.sendMessage(jid, fallback)
+          store.appendMessage({ jid, role: 'bot', text: fallback, timestamp: Date.now() })
         }
         return
       }
