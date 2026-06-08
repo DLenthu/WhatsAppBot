@@ -8,7 +8,7 @@ import makeWASocket, {
 import { Boom } from '@hapi/boom'
 import qrcode from 'qrcode-terminal'
 import pino from 'pino'
-import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync } from 'fs'
+import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync, readdirSync } from 'fs'
 
 const logger = pino({ level: 'silent' }).child({ module: 'whatsapp-client' })
 const CONTACTS_PATH = './data/contacts.json'
@@ -180,6 +180,11 @@ export async function createWhatsAppClient(onMessage) {
           if (senderPn) upsertContact({ id: senderPn, notify: pushName })
         }
 
+        // Extract sticker thumbnail (PNG bytes) for vision analysis downstream
+        const stickerThumbnail = message.stickerMessage?.pngThumbnail
+          ? Buffer.from(message.stickerMessage.pngThumbnail).toString('base64')
+          : null
+
         const text =
           message.conversation ||
           message.extendedTextMessage?.text ||
@@ -195,7 +200,7 @@ export async function createWhatsAppClient(onMessage) {
             ? messageTimestamp
             : messageTimestamp?.toNumber?.() ?? Date.now()
 
-        onMessage({ jid: remoteJid, altJid: senderPn, senderName, text, timestamp, fromMe }).catch(err =>
+        onMessage({ jid: remoteJid, altJid: senderPn, senderName, text, timestamp, fromMe, stickerThumbnail }).catch(err =>
           console.error('[client] Unhandled error in message handler:', err)
         )
       }
@@ -207,6 +212,24 @@ export async function createWhatsAppClient(onMessage) {
   return {
     async sendMessage(jid, text) {
       return await sock.sendMessage(jid, { text })
+    },
+
+    async sendSticker(jid, filePath) {
+      const buffer = readFileSync(filePath)
+      return await sock.sendMessage(jid, { sticker: buffer })
+    },
+
+    // Returns list of available stickers from data/stickers/ (filename + description derived from name)
+    getStickerLibrary() {
+      try {
+        const dir = './data/stickers'
+        if (!existsSync(dir)) return []
+        return readdirSync(dir)
+          .filter(f => f.endsWith('.webp'))
+          .map(f => ({ filename: f, description: f.replace('.webp', '').replace(/[-_]/g, ' ') }))
+      } catch {
+        return []
+      }
     },
 
     async editMessage(jid, key, text) {

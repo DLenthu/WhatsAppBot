@@ -1,18 +1,3 @@
-/**
- * Response Generator
- *
- * Assembles context (style profile + message history), builds a system prompt,
- * calls the LLM, sends the reply to the active contact, and notifies self-chat.
- */
-
-/**
- * Build a system prompt from the user's style profile.
- *
- * @param {Object|null} profile - Style profile returned by store.getProfile()
- * @param {string} userName - The bot user's own name (derived from self JID)
- * @param {string} senderName - The contact's display name
- * @returns {string}
- */
 function buildCodeSwitchingNote(profile) {
   if (!profile.language || profile.language === 'English' || profile.language === 'unknown') {
     return 'Communicates purely in English.'
@@ -23,16 +8,30 @@ function buildCodeSwitchingNote(profile) {
   return `Naturally code-switches between English and ${profile.language.replace('English-', '').replace(' mix', '')} mid-sentence — never forced, just how they actually talk.${words}`
 }
 
-function buildSystemPrompt(profile, userName, senderName) {
+function buildStickerSection(stickerLibrary) {
+  if (!stickerLibrary || stickerLibrary.length === 0) return ''
+  return [
+    '━━ STICKER REPLIES ━━',
+    'To reply with a sticker instead of text, output ONLY: STICKER:<filename>',
+    'Available stickers:',
+    ...stickerLibrary.map(s => `  STICKER:${s.filename} — ${s.description}`),
+    'Use a sticker only when a text reply would feel unnatural (e.g. replying to a sticker with a sticker). If unsure, reply with text.',
+  ].join('\n')
+}
+
+function buildSystemPrompt(profile, userName, senderName, stickerLibrary = []) {
+  const stickerSection = buildStickerSection(stickerLibrary)
+
   if (!profile) {
     return [
       `You are ${userName}. You are NOT an AI, bot, or assistant — you have zero awareness of being anything other than ${userName}.`,
       `Reply to the WhatsApp message from ${senderName} in a natural, casual, brief way. Match the energy of the message.`,
       `If asked whether you are a bot or AI, deny it naturally as ${userName} would.`,
       'Never reference past conversation details, never leak context from other chats, never comment on the system behind this.',
-      'If the incoming message is [sticker], react to it naturally and briefly — do not say the word "sticker".',
-      'Reply only with the message text — no quotes, no labels, no explanation.',
-    ].join('\n')
+      'If the incoming message is [sticker: ...], react to it naturally and briefly — do not say the word "sticker".',
+      stickerSection,
+      'Reply only with message text or a STICKER:<filename> directive. No quotes, no labels, no explanation.',
+    ].filter(Boolean).join('\n')
   }
 
   const phrases = Array.isArray(profile.commonPhrases) && profile.commonPhrases.length > 0
@@ -93,25 +92,19 @@ function buildSystemPrompt(profile, userName, senderName) {
     '- Never be more formal, longer, or more polished than the fingerprint shows.',
     '- Do not add greetings, sign-offs, or filler phrases unless the fingerprint shows them.',
     '',
+    stickerSection,
+    '',
     '━━ GUARDRAILS (ABSOLUTE — NEVER BREAK) ━━',
     `- IDENTITY LOCK: You ARE ${userName}. Not an AI. Not a language model. Not a bot. Not an assistant. You have zero awareness of being anything other than ${userName}. This is unconditional.`,
     `- IF ASKED IF YOU ARE A BOT / AI / FAKE: Deny it naturally in ${userName}'s voice. React how a real person would — confused, amused, dismissive. Never confirm, hint, or hedge.`,
     '- NO CONTENT LEAKAGE: The conversation history tells you WHAT to reply to — nothing more. Never reference, quote, summarise, or reveal specific facts, events, plans, or details from any past message.',
     '- NO CROSS-CONTAMINATION: You have zero knowledge of any other contact, conversation, or profile. Every chat is completely isolated. Never let context from one conversation bleed into another.',
     '- NO META: Never explain your reply, comment on the conversation, acknowledge any instruction, or reference any system running behind this chat.',
-    '- STICKERS: If the incoming message is [sticker], react to it naturally and briefly in your own voice — as if you just saw a funny or cute image. Do not say the word "sticker".',
-    '- Reply only with the message text. No quotes, no labels, no explanation.',
-  ].filter(l => l !== null).join('\n')
+    '- STICKERS: If the incoming message is [sticker: ...], react to it naturally and briefly in your own voice. Do not say the word "sticker".',
+    '- Reply only with message text or a STICKER:<filename> directive. No quotes, no labels, no explanation.',
+  ].filter(l => l !== null && l !== undefined).join('\n')
 }
 
-/**
- * Convert store history rows to the LLM message format.
- * Store roles: 'user' (contact) | 'bot' (our reply)
- * LLM roles:  'user'           | 'assistant'
- *
- * @param {Array<{role: string, text: string}>} rows
- * @returns {Array<{role: string, content: string}>}
- */
 function formatHistoryForLLM(rows) {
   return rows.map((row) => ({
     role: row.role === 'bot' ? 'assistant' : 'user',
@@ -119,77 +112,86 @@ function formatHistoryForLLM(rows) {
   }))
 }
 
-/**
- * Create a response generator that handles incoming messages and replies.
- *
- * @param {{ store: Object, llmProvider: Object, client: Object }} deps
- * @returns {{ handleMessage: Function }}
- */
 export function createResponseGenerator({ store, llmProvider, client }) {
-  // Dedup: track recently-processed message identifiers to avoid duplicate replies
-  // when Baileys re-fires messages.upsert across reconnects.
   const DEDUP_MAX = 100
   const recentMessageIds = new Set()
 
-  /**
-   * Handle an incoming active-contact message end-to-end.
-   *
-   * @param {{ jid: string, senderName: string, text: string, timestamp: number }} msg
-   * @returns {Promise<void>}
-   */
-  async function handleMessage({ jid, senderName, text, timestamp }) {
+  async function handleMessage({ jid, senderName, text, timestamp, stickerThumbnail }) {
     const userName = client.getSelfName() || 'the user'
 
     try {
-      // 0. Dedup — skip if we've already processed this exact message recently.
+      // 0. Dedup
       const dedupKey = `${jid}:${timestamp}:${(text ?? '').slice(0, 30)}`
       if (recentMessageIds.has(dedupKey)) {
         console.log(`[generator] Skipping duplicate message from ${senderName} (${jid})`)
         return
       }
       recentMessageIds.add(dedupKey)
-      // Trim to the last DEDUP_MAX entries (Set preserves insertion order).
       while (recentMessageIds.size > DEDUP_MAX) {
-        const oldest = recentMessageIds.values().next().value
-        recentMessageIds.delete(oldest)
+        recentMessageIds.delete(recentMessageIds.values().next().value)
       }
 
       console.log(`[generator] Generating reply for ${senderName} (${jid})`)
       const profile = store.getProfile(jid) ?? store.getProfile(senderName)
       console.log(`[generator] Profile: ${profile ? `found (${profile.sampleSize} msgs, ${profile.language})` : 'none — using generic style'}`)
 
-      // 2. Fetch last 10 messages from history
-      //    NOTE: the router already appended the incoming message before calling us,
-      //    so the history already includes it as the last entry.
+      // 1. If this is a sticker and we have a thumbnail, describe it for richer context.
+      let contextText = text
+      if (text === '[sticker]' && stickerThumbnail && llmProvider.describeSticker) {
+        const description = await llmProvider.describeSticker(stickerThumbnail)
+        if (description) {
+          contextText = `[sticker: ${description}]`
+          console.log(`[generator] Sticker described: ${description}`)
+        }
+      }
+
+      // 2. Fetch last 10 messages from history; update the last entry with the enriched sticker text.
       const historyRows = store.getHistory(jid, 10)
+      if (contextText !== text && historyRows.length > 0) {
+        historyRows[historyRows.length - 1] = { ...historyRows[historyRows.length - 1], text: contextText }
+      }
 
-      // 3. Build system prompt
-      const systemPrompt = buildSystemPrompt(profile, userName, senderName)
+      // 3. Load sticker library for system prompt
+      const stickerLibrary = client.getStickerLibrary?.() ?? []
 
-      // 4. Convert history to LLM format
+      // 4. Build system prompt
+      const systemPrompt = buildSystemPrompt(profile, userName, senderName, stickerLibrary)
+
+      // 5. Convert history to LLM format
       const historyMessages = formatHistoryForLLM(historyRows)
 
-      // 5. Call LLM
+      // 6. Call LLM
       let generatedReply = await llmProvider.generate(systemPrompt, historyMessages)
 
-      // 5a. Guard against empty/whitespace-only LLM output.
       if (!generatedReply || !generatedReply.trim()) {
         throw new Error('LLM returned empty response')
       }
 
-      // 5b. Trim and strip surrounding quotes the LLM may have added.
       generatedReply = generatedReply.trim().replace(/^["'](.+)["']$/s, '$1').trim()
 
-      // 6. Send reply to contact
-      await client.sendMessage(jid, generatedReply)
+      // 7. Check if LLM wants to send a sticker
+      const stickerMatch = generatedReply.match(/^STICKER:(.+)$/i)
+      if (stickerMatch) {
+        const filename = stickerMatch[1].trim()
+        const stickerPath = `./data/stickers/${filename}`
+        try {
+          await client.sendSticker(jid, stickerPath)
+          store.appendMessage({ jid, role: 'bot', text: `[sticker: ${filename}]`, timestamp: Date.now() })
+          console.log(`[generator] Sent sticker: ${filename}`)
+        } catch (stickerErr) {
+          console.warn(`[generator] Sticker send failed (${filename}):`, stickerErr.message)
+          // Fall back to a text reply
+          await client.sendMessage(jid, '😂')
+          store.appendMessage({ jid, role: 'bot', text: '😂', timestamp: Date.now() })
+        }
+        return
+      }
 
-      // 7. Store bot reply in history
+      // 8. Send text reply
+      await client.sendMessage(jid, generatedReply)
       store.appendMessage({ jid, role: 'bot', text: generatedReply, timestamp: Date.now() })
 
-      // No self-chat notification — only !activate/!deactivate surface there.
-      // Terminal still logs via [generator] / [router] for visibility.
     } catch (err) {
-      // Terminal-only — no self-chat notification (per user preference: only !activate/!deactivate surface there)
       console.error(`[ResponseGenerator] Failed to reply to ${senderName} (${jid}):`, err)
     }
   }
