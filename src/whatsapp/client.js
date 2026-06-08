@@ -149,7 +149,7 @@ export async function createWhatsAppClient(onMessage) {
         if (!historyStore.has(jid)) historyStore.set(jid, [])
         const arr = historyStore.get(jid)
         arr.push(msg)
-        if (arr.length > 500) arr.splice(0, arr.length - 500)
+        if (arr.length > 1000) arr.splice(0, arr.length - 1000)
       }
       console.log(`[client] History synced: ${historyStore.size} chats`)
     })

@@ -121,7 +121,7 @@ export function createCommandHandler({ store, client }) {
           `⏳ Adapting personality for ${contact.name}${refreshTag}\n` +
           `▰▱▱  ${elapsed()}  📥 Loading chat history...`
         )
-        const rawMessages = await withMinTime(600, () => client.getHistoryMessages(contact.jid, 500))
+        const rawMessages = await withMinTime(600, () => client.getHistoryMessages(contact.jid, 1000))
 
         if (rawMessages.length > 0) {
           // Phase 2 — parse messages
