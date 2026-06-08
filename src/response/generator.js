@@ -147,8 +147,9 @@ export function createResponseGenerator({ store, llmProvider, client }) {
       } else if ((text === '[image]' || text?.startsWith('[image caption:')) && imageThumbnail && llmProvider.describeSticker) {
         const description = await llmProvider.describeSticker(imageThumbnail)
         if (description) {
-          const caption = text.startsWith('[image caption:') ? text : ''
-          contextText = caption ? `[image: ${description} — caption: "${caption.replace('[image caption: ', '').replace(']', '')}"]` : `[image: ${description}]`
+          const captionMatch = text.match(/^\[image caption: ([\s\S]+)\]$/)
+          const caption = captionMatch ? captionMatch[1] : null
+          contextText = caption ? `[image: ${description} — caption: "${caption}"]` : `[image: ${description}]`
           console.log(`[generator] Image described: ${description}`)
         }
       }

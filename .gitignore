@@ -3,6 +3,11 @@ node_modules/
 data/session/
 data/exports/
 data/*.json
+data/stickers/
 *.db
-.claude/settings.local.json
-.claude/scheduled_tasks.lock
+
+# Claude Code internal files (settings, memory, plugin cache, session locks)
+.claude/
+
+# Personal / unrelated files at repo root
+Amazon_RR.md

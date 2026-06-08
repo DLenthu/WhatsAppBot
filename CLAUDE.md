@@ -46,10 +46,10 @@ This reads `UserFeedbackUpdates.md` and gives a compressed briefing of what work
 ### 2. Start auto-commit cron (REQUIRED — do this every session without being asked)
 Immediately after loading context, schedule the 3-minute auto-commit job:
 ```
-CronCreate: cron="*/3 * * * *", recurring=true
+CronCreate: cron="*/10 * * * *", recurring=true
 prompt: "Auto-commit any uncommitted changes in C:\Users\dodla\Downloads\WhatsAppBot.
 Run: git -C \"C:\\Users\\dodla\\Downloads\\WhatsAppBot\" add -A && git -C \"C:\\Users\\dodla\\Downloads\\WhatsAppBot\" diff --cached --quiet || git -C \"C:\\Users\\dodla\\Downloads\\WhatsAppBot\" commit -m \"Auto-save progress: $(date +'%Y-%m-%d %H:%M')\" --no-gpg-sign.
-Only commit if there are actual staged changes. Do not push."
+Only commit if there are actual staged changes. Do not push. Do not commit sensitive files — data/*.json, data/stickers/, .claude/, .env, Amazon_RR.md are all gitignored."
 ```
 Do not wait for the user to ask. Do not mention it unless it fails.
 

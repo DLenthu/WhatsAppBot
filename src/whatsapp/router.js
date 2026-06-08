@@ -56,15 +56,15 @@ export function createMessageRouter({ store, commandHandler, onActiveMessage, cl
 
     if (activeChat) {
       console.log(`[router] Active message from ${senderName} (${jid}) → matched as ${matchedJid} → generating reply`)
-      store.saveContactHint(senderName, jid)
-      // Use the actual remote JID (where messages arrive) for history & reply destination
+      // Don't map a group JID to an individual sender — that would corrupt !activate name lookups
+      if (!jid.endsWith('@g.us')) store.saveContactHint(senderName, jid)
       store.appendMessage({ jid, role: 'user', text, timestamp })
       await onActiveMessage({ jid, senderName, text, timestamp, stickerThumbnail, imageThumbnail })
       return
     }
 
-    // 3. Otherwise, just silently learn this contact for future activation lookups
-    store.saveContactHint(senderName, jid)
+    // 3. Silently learn personal contacts for future activation lookups (skip groups)
+    if (!jid.endsWith('@g.us')) store.saveContactHint(senderName, jid)
   }
 
   return { route }

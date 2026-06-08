@@ -121,10 +121,9 @@ function createSQLiteStore(dbPath) {
       if (count > 50) {
         const idsToDelete = db
           .prepare(
-            `SELECT id FROM message_history WHERE jid = ?
-             ORDER BY timestamp ASC LIMIT ${count - 50}`
+            'SELECT id FROM message_history WHERE jid = ? ORDER BY timestamp ASC LIMIT ?'
           )
-          .all(jid)
+          .all(jid, count - 50)
           .map((row) => row.id)
 
         if (idsToDelete.length > 0) {
@@ -394,7 +393,7 @@ function createJSONStore(dbPath) {
 
       const q = nameQuery.toLowerCase()
       for (const [jid, name] of Object.entries(state.contact_hints)) {
-        if (name.toLowerCase().includes(q)) {
+        if (typeof name === 'string' && name.toLowerCase().includes(q)) {
           return { jid, name }
         }
       }

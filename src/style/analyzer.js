@@ -70,6 +70,8 @@ function isNonAsciiWord(w) {
 
 // Matches a single emoji grapheme cluster (handles skin-tone / ZWJ sequences).
 const EMOJI_RE = /\p{Emoji_Presentation}|\p{Extended_Pictographic}/gu;
+// Non-global version for .test() — avoids the stateful lastIndex bug with /g flag.
+const EMOJI_TEST_RE = /\p{Emoji_Presentation}|\p{Extended_Pictographic}/u;
 
 /**
  * Extract all emoji characters from a string, one per match.
@@ -331,7 +333,7 @@ function detectPunctuationStyle(myMessages) {
     const text = m.text.trim();
     if (!text) return false;
     const last = text[text.length - 1];
-    return !/[.?!…]/.test(last) && !EMOJI_RE.test(last);
+    return !/[.?!…]/.test(last) && !EMOJI_TEST_RE.test(last);
   }).length;
   const ratio = noPunct / myMessages.length;
   if (ratio >= 0.65) return 'rarely uses end punctuation';

@@ -9,6 +9,7 @@ import { Boom } from '@hapi/boom'
 import qrcode from 'qrcode-terminal'
 import pino from 'pino'
 import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync, readdirSync } from 'fs'
+import { readFile } from 'fs/promises'
 
 const logger = pino({ level: 'silent' }).child({ module: 'whatsapp-client' })
 const CONTACTS_PATH = './data/contacts.json'
@@ -222,7 +223,7 @@ export async function createWhatsAppClient(onMessage) {
     },
 
     async sendSticker(jid, filePath) {
-      const buffer = readFileSync(filePath)
+      const buffer = await readFile(filePath)
       return await sock.sendMessage(jid, { sticker: buffer })
     },
 
