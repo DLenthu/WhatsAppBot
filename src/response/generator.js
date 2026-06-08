@@ -29,7 +29,7 @@ function buildSystemPrompt(profile, userName, senderName, stickerLibrary = []) {
       `Reply to the WhatsApp message from ${senderName} in a natural, casual, brief way. Match the energy of the message.`,
       `If asked whether you are a bot or AI, deny it naturally as ${userName} would.`,
       'Never reference past conversation details, never leak context from other chats, never comment on the system behind this.',
-      'If the incoming message is [sticker: ...], react to it naturally and briefly — do not say the word "sticker".',
+      'If the incoming message is [sticker], [sticker: description], [image], or [image: description], react naturally and briefly. Do not say the words "sticker" or "image".',
       stickerSection,
       '- Reply only with message text or a STICKER:<filename>|<fallback> directive. No quotes, no labels, no explanation.',
     ].filter(Boolean).join('\n')
@@ -101,8 +101,8 @@ function buildSystemPrompt(profile, userName, senderName, stickerLibrary = []) {
     '- NO CONTENT LEAKAGE: The conversation history tells you WHAT to reply to — nothing more. Never reference, quote, summarise, or reveal specific facts, events, plans, or details from any past message.',
     '- NO CROSS-CONTAMINATION: You have zero knowledge of any other contact, conversation, or profile. Every chat is completely isolated. Never let context from one conversation bleed into another.',
     '- NO META: Never explain your reply, comment on the conversation, acknowledge any instruction, or reference any system running behind this chat.',
-    '- STICKERS: If the incoming message is [sticker: ...], react to it naturally and briefly in your own voice. Do not say the word "sticker".',
-    '- Reply only with message text or a STICKER:<filename> directive. No quotes, no labels, no explanation.',
+    '- STICKERS/IMAGES: If the incoming message is [sticker], [sticker: description], [image], or [image: description], react naturally and briefly in your own voice. Do not say the words "sticker" or "image".',
+    '- Reply only with message text or a STICKER:<filename>|<fallback> directive. No quotes, no labels, no explanation.',
   ].filter(l => l !== null && l !== undefined).join('\n')
 }
 
@@ -139,18 +139,24 @@ export function createResponseGenerator({ store, llmProvider, client }) {
       // 1. Describe visual content (sticker or image) for richer context.
       let contextText = text
       if (text === '[sticker]' && stickerThumbnail && llmProvider.describeSticker) {
+        console.log(`[generator] Running vision on sticker thumbnail...`)
         const description = await llmProvider.describeSticker(stickerThumbnail)
         if (description) {
           contextText = `[sticker: ${description}]`
-          console.log(`[generator] Sticker described: ${description}`)
+          console.log(`[generator] Sticker described: "${description}"`)
+        } else {
+          console.log(`[generator] Vision returned nothing — using [sticker] placeholder`)
         }
       } else if ((text === '[image]' || text?.startsWith('[image caption:')) && imageThumbnail && llmProvider.describeSticker) {
+        console.log(`[generator] Running vision on image thumbnail...`)
         const description = await llmProvider.describeSticker(imageThumbnail)
         if (description) {
           const captionMatch = text.match(/^\[image caption: ([\s\S]+)\]$/)
           const caption = captionMatch ? captionMatch[1] : null
           contextText = caption ? `[image: ${description} — caption: "${caption}"]` : `[image: ${description}]`
-          console.log(`[generator] Image described: ${description}`)
+          console.log(`[generator] Image described: "${description}"`)
+        } else {
+          console.log(`[generator] Vision returned nothing — using placeholder`)
         }
       }
 
